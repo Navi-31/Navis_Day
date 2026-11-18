@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Aura Daily Tracker</string>
-    <string name="title_activity_main">Aura Daily Tracker</string>
+    <string name="app_name">NR</string>
+    <string name="title_activity_main">NR</string>
     <string name="package_name">com.aura.dailytracker</string>
     <string name="custom_url_scheme">com.aura.dailytracker</string>
 </resources>

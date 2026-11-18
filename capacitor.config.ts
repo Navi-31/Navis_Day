@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.aura.dailytracker',
-  appName: 'Aura Daily Tracker',
+  appName: 'NR',
   webDir: 'dist',
   android: {
     backgroundColor: '#000000',
