@@ -62,6 +62,8 @@ class DatabaseService {
 
     // Ensure default timer rows exist
     await this.ensureDefaultTimerStates();
+    // Purge any legacy sample/mock seed data (such as the initial ₹1,450 expense entries)
+    await this.purgeMockSeedData();
     this.initialized = true;
   }
 
@@ -686,87 +688,62 @@ class DatabaseService {
     }
   }
 
-  // Seed sample initial data if completely empty so the user can immediately experience the UI
+  // Purge any legacy sample mock data so user has a clean slate (e.g. ₹1,450 default expense)
+  public async purgeMockSeedData(): Promise<void> {
+    const mockReasons = [
+      'Morning Metro Bus Ticket',
+      'Project Lunch Meeting',
+      'Hardware Supplies & Return',
+    ];
+    const mockNotes = [
+      'Focus Sprint Initialized',
+      'Platform Terminal 4',
+      'Interval: 00:45',
+    ];
+
+    if (this.isNative && this.db) {
+      try {
+        const placeholders = mockReasons.map(() => '?').join(',');
+        await this.db.run(
+          `DELETE FROM expenses WHERE reason IN (${placeholders})`,
+          mockReasons
+        );
+
+        const notePlaceholders = mockNotes.map(() => '?').join(',');
+        await this.db.run(
+          `DELETE FROM timer_events WHERE note IN (${notePlaceholders})`,
+          mockNotes
+        );
+      } catch (err) {
+        console.error('Failed to purge mock seed data from native SQLite:', err);
+      }
+    }
+
+    // Also clean web localStorage fallback
+    try {
+      const expKey = this.webStorageKeyPrefix + 'expenses';
+      const storedExp = localStorage.getItem(expKey);
+      if (storedExp) {
+        const expenses: Expense[] = JSON.parse(storedExp);
+        const filtered = expenses.filter((e) => !mockReasons.includes(e.reason));
+        localStorage.setItem(expKey, JSON.stringify(filtered));
+      }
+
+      const evtKey = this.webStorageKeyPrefix + 'timer_events';
+      const storedEvt = localStorage.getItem(evtKey);
+      if (storedEvt) {
+        const events: TimerEvent[] = JSON.parse(storedEvt);
+        const filtered = events.filter((e) => !mockNotes.includes(e.note || ''));
+        localStorage.setItem(evtKey, JSON.stringify(filtered));
+      }
+    } catch (e) {
+      console.error('Failed to purge mock seed data from web storage:', e);
+    }
+  }
+
+  // Deprecated seeder - now purely no-op to ensure expenses start at ₹0
   public async seedInitialDataIfEmpty(): Promise<void> {
-    const existingEvents = await this.getAllEvents();
-    if (existingEvents.length > 0) return;
-
-    const todayStr = formatDate();
-    const now = Date.now();
-
-    // Add sample expenses
-    await this.saveExpense({
-      dateStr: todayStr,
-      timeStr: '09:15',
-      timestampMs: now - 1000 * 60 * 60 * 4,
-      amount: 120,
-      reason: 'Morning Metro Bus Ticket',
-      category: 'Transit',
-    });
-
-    await this.saveExpense({
-      dateStr: todayStr,
-      timeStr: '13:30',
-      timestampMs: now - 1000 * 60 * 60 * 2,
-      amount: 450,
-      reason: 'Project Lunch Meeting',
-      category: 'Meals',
-    });
-
-    await this.saveExpense({
-      dateStr: todayStr,
-      timeStr: '17:45',
-      timestampMs: now - 1000 * 60 * 30,
-      amount: 880,
-      reason: 'Hardware Supplies & Return',
-      category: 'Logistics',
-    });
-
-    // Sample events
-    await this.logTimerEvent({
-      timerId: 'day_analysis',
-      timerName: 'Day Analysis',
-      eventType: 'START',
-      timestampMs: now - 1000 * 60 * 60 * 6,
-      dateStr: todayStr,
-      timeStr: '09:00',
-      note: 'Focus Sprint Initialized',
-    });
-
-    await this.logTimerEvent({
-      timerId: 'bus_waiting',
-      timerName: 'Bus Waiting',
-      eventType: 'START',
-      timestampMs: now - 1000 * 60 * 60 * 5,
-      dateStr: todayStr,
-      timeStr: '10:00',
-      note: 'Platform Terminal 4',
-    });
-
-    await this.logTimerEvent({
-      timerId: 'bus_waiting',
-      timerName: 'Bus Waiting',
-      eventType: 'STOP',
-      timestampMs: now - 1000 * 60 * 60 * 4.25,
-      dateStr: todayStr,
-      timeStr: '10:45',
-      durationMs: 45 * 60 * 1000,
-      note: 'Interval: 00:45',
-    });
-
-    await this.recordTimerSession(
-      'bus_waiting',
-      'Bus Waiting',
-      now - 1000 * 60 * 60 * 5,
-      now - 1000 * 60 * 60 * 4.25
-    );
-
-    await this.recordTimerSession(
-      'bus_travel',
-      'Bus Travel',
-      now - 1000 * 60 * 60 * 4.25,
-      now - 1000 * 60 * 60 * 2.75
-    );
+    return;
   }
 }
 

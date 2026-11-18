@@ -106,7 +106,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     const init = async () => {
       await dbService.initialize();
-      await dbService.seedInitialDataIfEmpty();
 
       const states = await dbService.getAllTimerActiveStates();
       setActiveStates(states);
