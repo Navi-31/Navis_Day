@@ -688,7 +688,7 @@ class DatabaseService {
     }
   }
 
-  // Purge any legacy sample mock data so user has a clean slate (e.g. ₹1,450 default expense)
+  // Purge all legacy sample mock data so user has an entirely clean slate
   public async purgeMockSeedData(): Promise<void> {
     const mockReasons = [
       'Morning Metro Bus Ticket',
@@ -705,7 +705,7 @@ class DatabaseService {
       try {
         const placeholders = mockReasons.map(() => '?').join(',');
         await this.db.run(
-          `DELETE FROM expenses WHERE reason IN (${placeholders})`,
+          `DELETE FROM expenses WHERE reason IN (${placeholders}) OR amount IN (120, 450, 880)`,
           mockReasons
         );
 
@@ -713,6 +713,10 @@ class DatabaseService {
         await this.db.run(
           `DELETE FROM timer_events WHERE note IN (${notePlaceholders})`,
           mockNotes
+        );
+
+        await this.db.run(
+          `DELETE FROM timer_sessions WHERE (timer_id = 'bus_waiting' AND duration_ms = 2700000) OR (timer_id = 'bus_travel' AND duration_ms = 5400000)`
         );
       } catch (err) {
         console.error('Failed to purge mock seed data from native SQLite:', err);
@@ -725,7 +729,9 @@ class DatabaseService {
       const storedExp = localStorage.getItem(expKey);
       if (storedExp) {
         const expenses: Expense[] = JSON.parse(storedExp);
-        const filtered = expenses.filter((e) => !mockReasons.includes(e.reason));
+        const filtered = expenses.filter(
+          (e) => !mockReasons.includes(e.reason) && ![120, 450, 880].includes(e.amount)
+        );
         localStorage.setItem(expKey, JSON.stringify(filtered));
       }
 
@@ -736,8 +742,57 @@ class DatabaseService {
         const filtered = events.filter((e) => !mockNotes.includes(e.note || ''));
         localStorage.setItem(evtKey, JSON.stringify(filtered));
       }
+
+      const sessKey = this.webStorageKeyPrefix + 'timer_sessions';
+      const storedSess = localStorage.getItem(sessKey);
+      if (storedSess) {
+        const sessions: TimerSession[] = JSON.parse(storedSess);
+        const filtered = sessions.filter(
+          (s) =>
+            !(s.timerId === 'bus_waiting' && s.durationMs === 2700000) &&
+            !(s.timerId === 'bus_travel' && s.durationMs === 5400000)
+        );
+        localStorage.setItem(sessKey, JSON.stringify(filtered));
+      }
     } catch (e) {
       console.error('Failed to purge mock seed data from web storage:', e);
+    }
+  }
+
+  // Completely wipe all database tables to erase everything
+  public async clearAllData(): Promise<void> {
+    if (this.isNative && this.db) {
+      try {
+        await this.db.run('DELETE FROM expenses');
+        await this.db.run('DELETE FROM timer_events');
+        await this.db.run('DELETE FROM timer_sessions');
+        await this.db.run(`
+          UPDATE timer_active_state
+          SET status = 'IDLE', session_start_ms = NULL, accumulated_ms = 0, last_updated_ms = ?
+        `, [Date.now()]);
+      } catch (err) {
+        console.error('Failed to clear all data in SQLite:', err);
+      }
+    }
+
+    try {
+      localStorage.removeItem(this.webStorageKeyPrefix + 'expenses');
+      localStorage.removeItem(this.webStorageKeyPrefix + 'timer_events');
+      localStorage.removeItem(this.webStorageKeyPrefix + 'timer_sessions');
+      for (const timerId of ['day_analysis', 'bus_waiting', 'bus_travel'] as TimerId[]) {
+        localStorage.setItem(
+          this.webStorageKeyPrefix + 'active_state_' + timerId,
+          JSON.stringify({
+            timerId,
+            status: 'IDLE',
+            sessionStartTimeMs: null,
+            accumulatedDurationMs: 0,
+            lastUpdatedMs: Date.now(),
+          })
+        );
+      }
+    } catch (e) {
+      console.error('Failed to clear all data in localStorage:', e);
     }
   }
 

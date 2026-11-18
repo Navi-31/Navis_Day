@@ -310,7 +310,7 @@ export const HistoryAndExport: React.FC = () => {
               </div>
             </div>
             <span className="px-2 py-0.5 rounded bg-[#1e1e1e] border border-[#333] text-[#D4AF37] font-mono text-[10px] font-semibold">
-              v3.4 PRO
+              XLSX
             </span>
           </div>
 

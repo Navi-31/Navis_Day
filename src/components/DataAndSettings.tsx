@@ -18,10 +18,11 @@ import {
   CheckCircle2,
   AlertCircle,
   ExternalLink,
+  Trash2,
 } from 'lucide-react';
 
 export const DataAndSettings: React.FC = () => {
-  const { refreshData } = useApp();
+  const { refreshData, clearAllData } = useApp();
 
   // GitHub Settings
   const [repoOwner, setRepoOwner] = useState<string>('nithy');
@@ -105,6 +106,14 @@ export const DataAndSettings: React.FC = () => {
       }
     };
     reader.readAsText(file);
+  };
+
+  const handleClearAllData = async () => {
+    if (confirm('Permanently delete all timer sessions, events, and expense records? This action cannot be undone.')) {
+      await clearAllData();
+      setBackupNotice('All records have been erased completely.');
+      setTimeout(() => setBackupNotice(null), 4000);
+    }
   };
 
   return (
@@ -278,6 +287,28 @@ export const DataAndSettings: React.FC = () => {
             />
           </label>
         </div>
+      </div>
+
+      {/* Danger Zone: Erase All Data */}
+      <div className="rounded-2xl bg-[#140808] border border-red-900/60 p-4 flex flex-col gap-3 shadow-[0_4px_24px_rgba(239,68,68,0.1)]">
+        <div className="flex items-center gap-2">
+          <Trash2 size={18} className="text-red-400" />
+          <span className="font-mono text-xs uppercase tracking-wider text-red-400 font-bold">
+            ERASE ALL APP DATA
+          </span>
+        </div>
+        <p className="font-mono text-[11px] text-gray-400 leading-relaxed">
+          Completely erase all stopwatches, session intervals, activity logs, and expense records from local SQLite storage. Resets to a clean blank slate.
+        </p>
+
+        <button
+          onClick={handleClearAllData}
+          type="button"
+          className="flex items-center justify-center gap-2 py-3 rounded-xl bg-red-950/80 border border-red-700/80 text-red-200 font-mono text-xs font-bold hover:bg-red-900 active:scale-95 transition-all shadow-[0_0_15px_rgba(220,38,38,0.25)]"
+        >
+          <Trash2 size={14} />
+          <span>ERASE ENTIRE DATABASE</span>
+        </button>
       </div>
 
       {/* Battery & Architecture Telemetry Info */}

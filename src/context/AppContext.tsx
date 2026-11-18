@@ -58,6 +58,7 @@ interface AppContextType {
   selectedDateEvents: TimerEvent[];
   selectedDateExpenses: Expense[];
   refreshData: () => Promise<void>;
+  clearAllData: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -344,6 +345,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await refreshData();
   };
 
+  const clearAllData = async () => {
+    await dbService.clearAllData();
+    setActiveStates({
+      day_analysis: { timerId: 'day_analysis', status: 'IDLE', sessionStartTimeMs: null, accumulatedDurationMs: 0, lastUpdatedMs: Date.now() },
+      bus_waiting: { timerId: 'bus_waiting', status: 'IDLE', sessionStartTimeMs: null, accumulatedDurationMs: 0, lastUpdatedMs: Date.now() },
+      bus_travel: { timerId: 'bus_travel', status: 'IDLE', sessionStartTimeMs: null, accumulatedDurationMs: 0, lastUpdatedMs: Date.now() },
+    });
+    setDisplayTimes({
+      day_analysis: 0,
+      bus_waiting: 0,
+      bus_travel: 0,
+    });
+    setTodayExpenses([]);
+    await refreshData();
+  };
+
   const todayTotalExpense = todayExpenses.reduce((sum, e) => sum + e.amount, 0);
 
   return (
@@ -367,6 +384,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         selectedDateEvents,
         selectedDateExpenses,
         refreshData,
+        clearAllData,
       }}
     >
       {children}

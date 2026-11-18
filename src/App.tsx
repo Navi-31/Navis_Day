@@ -33,11 +33,11 @@ export const App: React.FC = () => {
               <div className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#D4AF37] animate-pulse" />
                 <span className="font-mono text-[9px] uppercase tracking-widest text-[#D4AF37]">
-                  AURA PRECISION
+                  PRECISION INSTRUMENT
                 </span>
               </div>
               <h1 className="font-display text-base font-bold text-white tracking-tight leading-none">
-                Aura Daily Tracker
+                NR
               </h1>
             </div>
           </div>
