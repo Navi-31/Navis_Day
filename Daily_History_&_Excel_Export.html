@@ -1,0 +1,496 @@
+<!DOCTYPE html><html class="dark" lang="en"><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"><meta content="mobile_tab" name="shell-type"><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Manrope:wght@400;500;600&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"><style>@layer base{html,body{width:100vw;margin:0;padding:0;background-color:#131313;color:#e5e2e1;}body{overscroll-behavior:none;-webkit-tap-highlight-color:transparent;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { "colors": { "tertiary-fixed": "#dbe1ff", "surface-container": "#201f1f", "on-tertiary-fixed": "#00174b", "on-surface-variant": "#d0c5af", "outline": "#99907c", "on-primary-container": "#554300", "error": "#ffb4ab", "on-background": "#e5e2e1", "tertiary": "#bfcdff", "surface-dim": "#131313", "primary-fixed": "#ffe088", "on-error": "#690005", "on-tertiary-container": "#254188", "secondary": "#d0bcff", "outline-variant": "#4d4635", "secondary-fixed-dim": "#d0bcff", "inverse-on-surface": "#313030", "on-secondary-fixed": "#23005c", "primary-fixed-dim": "#e9c349", "surface-container-low": "#1c1b1b", "on-tertiary": "#082b72", "inverse-primary": "#735c00", "inverse-surface": "#e5e2e1", "on-primary-fixed": "#241a00", "on-primary-fixed-variant": "#574500", "on-secondary-container": "#c4abff", "tertiary-fixed-dim": "#b4c5ff", "on-surface": "#e5e2e1", "on-error-container": "#ffdad6", "secondary-container": "#571bc1", "surface-container-high": "#2a2a2a", "surface-tint": "#e9c349", "tertiary-container": "#97b0ff", "on-secondary-fixed-variant": "#5516be", "on-secondary": "#3c0091", "primary-container": "#d4af37", "primary": "#f2ca50", "on-primary": "#3c2f00", "error-container": "#93000a", "surface-container-lowest": "#0e0e0e", "background": "#131313", "on-tertiary-fixed-variant": "#27438a", "surface-container-highest": "#353534", "secondary-fixed": "#e9ddff", "surface": "#131313", "surface-variant": "#353534", "surface-bright": "#3a3939" }, "borderRadius": { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" }, "spacing": { "space-lg": "1.5rem", "gutter-mobile": "0.75rem", "margin": "1.5rem", "gutter": "1rem", "space-sm": "0.5rem", "space-xl": "2.5rem", "space-md": "1rem", "space-xs": "0.25rem", "margin-mobile": "1rem" }, "fontFamily": { "label-md": ["JetBrains Mono"], "label-sm": ["JetBrains Mono"], "body-sm": ["Manrope"], "label-lg": ["JetBrains Mono"], "headline-lg-mobile": ["Space Grotesk"], "headline-xl-mobile": ["JetBrains Mono"], "headline-lg": ["Space Grotesk"], "headline-xl": ["JetBrains Mono"], "body-md": ["Manrope"], "body-lg": ["Manrope"], "headline-md": ["Space Grotesk"] }, "fontSize": { "label-md": ["11px", { "lineHeight": "16px", "letterSpacing": "0.1em", "fontWeight": "500" }], "label-sm": ["9px", { "lineHeight": "12px", "letterSpacing": "0.12em", "fontWeight": "500" }], "body-sm": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "400" }], "label-lg": ["13px", { "lineHeight": "18px", "letterSpacing": "0.08em", "fontWeight": "600" }], "headline-lg-mobile": ["26px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }], "headline-xl-mobile": ["38px", { "lineHeight": "42px", "letterSpacing": "-0.03em", "fontWeight": "700" }], "headline-lg": ["32px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "600" }], "headline-xl": ["48px", { "lineHeight": "52px", "letterSpacing": "-0.04em", "fontWeight": "700" }], "body-md": ["14px", { "lineHeight": "20px", "letterSpacing": "0.01em", "fontWeight": "400" }], "body-lg": ["16px", { "lineHeight": "24px", "letterSpacing": "0.01em", "fontWeight": "400" }], "headline-md": ["22px", { "lineHeight": "28px", "letterSpacing": "0em", "fontWeight": "500" }] } } } };</script><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head><body class="bg-surface font-body-md text-on-surface flex flex-col min-h-screen"><header class="fixed top-0 w-full z-50 pt-safe bg-surface/90 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.5)]"><div class="h-16 px-margin flex items-center justify-between"><div class="flex items-center gap-space-sm"><div class="w-9 h-9 rounded-full bg-surface-container-lowest flex items-center justify-center shadow-[0_0_12px_rgba(212,175,55,0.2)]"><span class="material-symbols-outlined text-primary text-[20px]">watch_screentime</span></div><div><div class="flex items-center gap-space-xs"><span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span></div><h1 class="font-headline-md text-headline-md text-on-surface tracking-tight leading-none">Daily History Excel</h1></div></div><div class="flex items-center gap-space-xs"><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex flex-col relative w-full pt-16 pb-24 bg-surface min-h-screen"><div class="flex flex-col w-full text-on-surface">
+<!-- SECTION 1: HEADER & LUXURY CALENDAR VAULT -->
+<div class="px-margin pt-space-sm pb-space-xs flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-primary text-[22px]" style="font-variation-settings: &quot;FILL&quot; 1;">history_toggle_off</span>
+<span class="font-label-lg text-label-lg tracking-widest text-primary uppercase">DAILY HISTORY &amp; VAULT</span>
+</div>
+<div class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-container-low shadow-[inset_0_1px_2px_rgba(255,255,255,0.06)]">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase">OCT 2024</span>
+</div>
+</div>
+<!-- Horizontal Chrono Date Dial Strip -->
+<div class="flex items-center gap-space-sm overflow-x-auto py-space-xs no-scrollbar">
+<button class="date-chip flex flex-col items-center justify-center min-w-[72px] py-2 px-1 rounded-xl bg-surface-container-lowest text-primary shadow-[0_0_16px_rgba(212,175,55,0.25)] transition-all" data-date="2024-10-24" type="button">
+<span class="font-label-sm text-label-sm text-primary uppercase font-bold tracking-wider">Today</span>
+<span class="font-headline-md text-headline-md text-primary leading-tight font-bold">24</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase">OCT</span>
+</button>
+<button class="date-chip flex flex-col items-center justify-center min-w-[72px] py-2 px-1 rounded-xl bg-surface-container-low text-on-surface-variant hover:text-on-surface transition-all" data-date="2024-10-23" type="button">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase font-medium">Y'day</span>
+<span class="font-headline-md text-headline-md text-on-surface leading-tight font-semibold">23</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase">OCT</span>
+</button>
+<button class="date-chip flex flex-col items-center justify-center min-w-[72px] py-2 px-1 rounded-xl bg-surface-container-low text-on-surface-variant hover:text-on-surface transition-all" data-date="2024-10-22" type="button">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase font-medium">Tue</span>
+<span class="font-headline-md text-headline-md text-on-surface leading-tight font-semibold">22</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase">OCT</span>
+</button>
+<button class="date-chip flex flex-col items-center justify-center min-w-[72px] py-2 px-1 rounded-xl bg-surface-container-low text-on-surface-variant hover:text-on-surface transition-all" data-date="2024-10-21" type="button">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase font-medium">Mon</span>
+<span class="font-headline-md text-headline-md text-on-surface leading-tight font-semibold">21</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase">OCT</span>
+</button>
+<button class="date-chip flex flex-col items-center justify-center min-w-[72px] py-2 px-1 rounded-xl bg-surface-container-low text-on-surface-variant hover:text-on-surface transition-all" data-date="2024-10-20" type="button">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase font-medium">Sun</span>
+<span class="font-headline-md text-headline-md text-on-surface leading-tight font-semibold">20</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase">OCT</span>
+</button>
+</div>
+</div>
+<!-- Luxury Circular Mini-Metric Telemetry Rings -->
+<div class="px-margin my-space-xs">
+<div class="bg-surface-container-low rounded-xl p-space-md shadow-[0_4px_24px_rgba(0,0,0,0.8)] flex flex-col gap-space-md">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-primary text-[16px]">speed</span>
+<span class="font-label-sm text-label-sm tracking-wider uppercase text-on-surface-variant">Calibrated Daily Totals</span>
+</div>
+<span class="font-label-sm text-label-sm text-secondary tracking-widest uppercase">Verified Vault</span>
+</div>
+<div class="grid grid-cols-2 gap-space-sm">
+<!-- Metric 1: Day Analysis -->
+<div class="bg-surface-container-lowest rounded-xl p-space-sm flex items-center gap-space-sm shadow-[inset_0_1px_2px_rgba(255,255,255,0.04)]">
+<div class="relative w-12 h-12 flex-shrink-0 flex items-center justify-center">
+<svg class="w-full h-full -rotate-90" viewBox="0 0 36 36">
+<path class="text-surface-container" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-width="2.5"></path>
+<path class="text-primary" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-dasharray="82, 100" stroke-linecap="round" stroke-width="2.5"></path>
+</svg>
+<span class="material-symbols-outlined text-primary text-[16px] absolute">hourglass_top</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-label-sm text-label-sm text-on-surface-variant truncate uppercase">Day Analysis</span>
+<span class="font-headline-md text-headline-md text-on-surface font-bold tracking-tight">08:15</span>
+</div>
+</div>
+<!-- Metric 2: Bus Waiting -->
+<div class="bg-surface-container-lowest rounded-xl p-space-sm flex items-center gap-space-sm shadow-[inset_0_1px_2px_rgba(255,255,255,0.04)]">
+<div class="relative w-12 h-12 flex-shrink-0 flex items-center justify-center">
+<svg class="w-full h-full -rotate-90" viewBox="0 0 36 36">
+<path class="text-surface-container" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-width="2.5"></path>
+<path class="text-secondary" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-dasharray="25, 100" stroke-linecap="round" stroke-width="2.5"></path>
+</svg>
+<span class="material-symbols-outlined text-secondary text-[16px] absolute">departure_board</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-label-sm text-label-sm text-on-surface-variant truncate uppercase">Bus Waiting</span>
+<span class="font-headline-md text-headline-md text-secondary font-bold tracking-tight">00:45</span>
+</div>
+</div>
+<!-- Metric 3: Bus Travel -->
+<div class="bg-surface-container-lowest rounded-xl p-space-sm flex items-center gap-space-sm shadow-[inset_0_1px_2px_rgba(255,255,255,0.04)]">
+<div class="relative w-12 h-12 flex-shrink-0 flex items-center justify-center">
+<svg class="w-full h-full -rotate-90" viewBox="0 0 36 36">
+<path class="text-surface-container" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-width="2.5"></path>
+<path class="text-secondary" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-dasharray="45, 100" stroke-linecap="round" stroke-width="2.5"></path>
+</svg>
+<span class="material-symbols-outlined text-secondary text-[16px] absolute">directions_bus</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-label-sm text-label-sm text-on-surface-variant truncate uppercase">Bus Travel</span>
+<span class="font-headline-md text-headline-md text-secondary font-bold tracking-tight">01:30</span>
+</div>
+</div>
+<!-- Metric 4: Daily Expenditure -->
+<div class="bg-surface-container-lowest rounded-xl p-space-sm flex items-center gap-space-sm shadow-[inset_0_1px_2px_rgba(255,255,255,0.04)]">
+<div class="relative w-12 h-12 flex-shrink-0 flex items-center justify-center">
+<svg class="w-full h-full -rotate-90" viewBox="0 0 36 36">
+<path class="text-surface-container" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-width="2.5"></path>
+<path class="text-primary" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-dasharray="68, 100" stroke-linecap="round" stroke-width="2.5"></path>
+</svg>
+<span class="material-symbols-outlined text-primary text-[16px] absolute">currency_rupee</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-label-sm text-label-sm text-on-surface-variant truncate uppercase">Expenditure</span>
+<span class="font-headline-md text-headline-md text-primary font-bold tracking-tight">₹1,450</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- SECTION 2: THREE-WORKSHEET EXCEL EXPORT SECTION -->
+<div class="px-margin my-space-sm">
+<div class="bg-surface-container-lowest rounded-xl p-space-md shadow-[0_8px_32px_rgba(212,175,55,0.12)] flex flex-col gap-space-md">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<div class="w-7 h-7 rounded bg-surface-container flex items-center justify-center text-primary shadow-[0_0_10px_rgba(212,175,55,0.3)]">
+<span class="material-symbols-outlined text-[18px]">table_view</span>
+</div>
+<div class="flex flex-col">
+<span class="font-label-lg text-label-lg text-on-surface tracking-wider font-bold">EXPORT TO EXCEL (.XLSX)</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Three-tier relational ledger dataset</span>
+</div>
+</div>
+<span class="px-2 py-0.5 rounded bg-surface-container text-primary font-label-sm text-label-sm font-semibold">v3.4 PRO</span>
+</div>
+<!-- 3 Distinct Sheet Badges -->
+<div class="flex flex-col gap-space-xs">
+<div class="flex items-center gap-space-sm bg-surface-container p-2 rounded-lg">
+<span class="px-2 py-0.5 rounded bg-surface-container-lowest text-primary font-label-sm text-label-sm font-bold">SHEET 1</span>
+<div class="flex flex-col min-w-0">
+<span class="font-body-sm text-body-sm text-on-surface font-semibold truncate">Daily Summary Table</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant truncate">Date · Day Analysis · Bus Travel · Waiting · Expense</span>
+</div>
+</div>
+<div class="flex items-center gap-space-sm bg-surface-container p-2 rounded-lg">
+<span class="px-2 py-0.5 rounded bg-surface-container-lowest text-secondary font-label-sm text-label-sm font-bold">SHEET 2</span>
+<div class="flex flex-col min-w-0">
+<span class="font-body-sm text-body-sm text-on-surface font-semibold truncate">Timer Activity Chrono-Log</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant truncate">Date · Time · Timer Name · Event (START/PAUSE/RESUME/STOP)</span>
+</div>
+</div>
+<div class="flex items-center gap-space-sm bg-surface-container p-2 rounded-lg">
+<span class="px-2 py-0.5 rounded bg-surface-container-lowest text-primary font-label-sm text-label-sm font-bold">SHEET 3</span>
+<div class="flex flex-col min-w-0">
+<span class="font-body-sm text-body-sm text-on-surface font-semibold truncate">Financial Expense Ledger</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant truncate">Date · Time · Amount (INR) · Detailed Reason</span>
+</div>
+</div>
+</div>
+<!-- One-Tap Download Button -->
+<button class="w-full py-3 px-space-md rounded-xl bg-surface-container-highest text-primary hover:text-on-primary hover:bg-primary transition-all duration-300 flex items-center justify-center gap-space-sm shadow-[0_0_20px_rgba(212,175,55,0.2)] active:scale-[0.98]" id="exportExcelBtn" type="button">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: &quot;FILL&quot; 1;">file_download</span>
+<span class="font-label-lg text-label-lg tracking-wider font-bold uppercase">DOWNLOAD EXCEL ARCHIVE</span>
+</button>
+<!-- Instant Toast confirmation placeholder -->
+<div class="hidden text-center py-1 font-label-sm text-label-sm text-primary animate-pulse" id="downloadNotice">
+        Archive generated: Chrono_Ledger_2024-10-24.csv downloaded.
+      </div>
+</div>
+</div>
+<!-- SECTION 3: DETAILED CHRONOLOGICAL EVENT LOGS -->
+<div class="px-margin my-space-xs flex flex-col gap-space-sm">
+<!-- Filter Tabs -->
+<div class="flex items-center justify-between p-1 bg-surface-container-lowest rounded-xl">
+<button class="filter-tab flex-1 py-1.5 rounded-lg bg-surface-container-high text-primary font-label-sm text-label-sm font-bold tracking-wider uppercase transition-colors" data-filter="all" type="button">
+        All (12)
+      </button>
+<button class="filter-tab flex-1 py-1.5 rounded-lg text-on-surface-variant hover:text-on-surface font-label-sm text-label-sm font-medium tracking-wider uppercase transition-colors" data-filter="stopwatch" type="button">
+        Timers (9)
+      </button>
+<button class="filter-tab flex-1 py-1.5 rounded-lg text-on-surface-variant hover:text-on-surface font-label-sm text-label-sm font-medium tracking-wider uppercase transition-colors" data-filter="expense" type="button">
+        Ledger (3)
+      </button>
+</div>
+<!-- Master Unified Timeline Feed -->
+<div class="flex flex-col gap-space-xs" id="eventsContainer">
+<!-- Event 1: Timer Start -->
+<div class="event-item type-timer bg-surface-container-low rounded-xl p-space-sm flex items-center justify-between shadow-[0_2px_8px_rgba(0,0,0,0.4)]">
+<div class="flex items-center gap-space-sm">
+<div class="w-8 h-8 rounded-lg bg-surface-container-lowest flex items-center justify-center text-primary shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)]">
+<span class="material-symbols-outlined text-[18px]">play_arrow</span>
+</div>
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-headline-md text-body-md font-bold text-on-surface">Day Analysis</span>
+<span class="px-1.5 py-0.5 rounded bg-surface-container-lowest text-primary font-label-sm text-label-sm font-bold">START</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Focus Sprint Initialized</span>
+</div>
+</div>
+<span class="font-label-md text-label-md text-primary font-bold">09:00</span>
+</div>
+<!-- Event 2: Expense Entry -->
+<div class="event-item type-expense bg-surface-container-lowest rounded-xl p-space-sm flex items-center justify-between shadow-[0_2px_12px_rgba(139,92,246,0.12)]">
+<div class="flex items-center gap-space-sm">
+<div class="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-[18px]">receipt</span>
+</div>
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-headline-md text-body-md font-bold text-on-surface">Morning Metro Bus Ticket</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Transit · 09:15</span>
+</div>
+</div>
+<div class="flex items-center gap-space-sm">
+<span class="font-label-lg text-label-lg text-secondary font-bold">₹120</span>
+<div class="flex items-center gap-1">
+<button aria-label="Edit Expense" class="p-1 text-on-surface-variant hover:text-on-surface transition-colors" onclick="alert('Edit transaction: Morning Metro Bus Ticket (₹120)')" type="button">
+<span class="material-symbols-outlined text-[16px]">edit</span>
+</button>
+<button aria-label="Delete Expense" class="p-1 text-on-surface-variant hover:text-secondary transition-colors" onclick="this.closest('.event-item').remove()" type="button">
+<span class="material-symbols-outlined text-[16px]">delete</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Event 3: Timer Pause -->
+<div class="event-item type-timer bg-surface-container-low rounded-xl p-space-sm flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<div class="w-8 h-8 rounded-lg bg-surface-container-lowest flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-[18px]">pause</span>
+</div>
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-headline-md text-body-md font-bold text-on-surface">Day Analysis</span>
+<span class="px-1.5 py-0.5 rounded bg-surface-container-lowest text-secondary font-label-sm text-label-sm font-bold">PAUSE</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Client Sync Break</span>
+</div>
+</div>
+<span class="font-label-md text-label-md text-on-surface font-semibold">11:30</span>
+</div>
+<!-- Event 4: Timer Resume -->
+<div class="event-item type-timer bg-surface-container-low rounded-xl p-space-sm flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<div class="w-8 h-8 rounded-lg bg-surface-container-lowest flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[18px]">play_arrow</span>
+</div>
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-headline-md text-body-md font-bold text-on-surface">Day Analysis</span>
+<span class="px-1.5 py-0.5 rounded bg-surface-container-lowest text-primary font-label-sm text-label-sm font-bold">RESUME</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Deep Calibration</span>
+</div>
+</div>
+<span class="font-label-md text-label-md text-primary font-bold">12:15</span>
+</div>
+<!-- Event 5: Bus Waiting Start -->
+<div class="event-item type-timer bg-surface-container-low rounded-xl p-space-sm flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<div class="w-8 h-8 rounded-lg bg-surface-container-lowest flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-[18px]">departure_board</span>
+</div>
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-headline-md text-body-md font-bold text-on-surface">Bus Waiting</span>
+<span class="px-1.5 py-0.5 rounded bg-surface-container-lowest text-secondary font-label-sm text-label-sm font-bold">START</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Platform Terminal 4</span>
+</div>
+</div>
+<span class="font-label-md text-label-md text-on-surface font-semibold">13:10</span>
+</div>
+<!-- Event 6: Expense Entry -->
+<div class="event-item type-expense bg-surface-container-lowest rounded-xl p-space-sm flex items-center justify-between shadow-[0_2px_12px_rgba(139,92,246,0.12)]">
+<div class="flex items-center gap-space-sm">
+<div class="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-[18px]">lunch_dining</span>
+</div>
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-headline-md text-body-md font-bold text-on-surface">Project Lunch Meeting</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Billed · 13:30</span>
+</div>
+</div>
+<div class="flex items-center gap-space-sm">
+<span class="font-label-lg text-label-lg text-secondary font-bold">₹450</span>
+<div class="flex items-center gap-1">
+<button aria-label="Edit Expense" class="p-1 text-on-surface-variant hover:text-on-surface transition-colors" onclick="alert('Edit transaction: Project Lunch Meeting (₹450)')" type="button">
+<span class="material-symbols-outlined text-[16px]">edit</span>
+</button>
+<button aria-label="Delete Expense" class="p-1 text-on-surface-variant hover:text-secondary transition-colors" onclick="this.closest('.event-item').remove()" type="button">
+<span class="material-symbols-outlined text-[16px]">delete</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Event 7: Bus Waiting Stop -->
+<div class="event-item type-timer bg-surface-container-low rounded-xl p-space-sm flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<div class="w-8 h-8 rounded-lg bg-surface-container-lowest flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-[18px]">stop</span>
+</div>
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-headline-md text-body-md font-bold text-on-surface">Bus Waiting</span>
+<span class="px-1.5 py-0.5 rounded bg-surface-container-lowest text-on-surface-variant font-label-sm text-label-sm font-semibold">STOP</span>
+</div>
+<span class="font-label-sm text-label-sm text-secondary font-bold">Interval: 00:35</span>
+</div>
+</div>
+<span class="font-label-md text-label-md text-on-surface font-semibold">13:45</span>
+</div>
+<!-- Event 8: Bus Travel Start -->
+<div class="event-item type-timer bg-surface-container-low rounded-xl p-space-sm flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<div class="w-8 h-8 rounded-lg bg-surface-container-lowest flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-[18px]">directions_bus</span>
+</div>
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-headline-md text-body-md font-bold text-on-surface">Bus Travel</span>
+<span class="px-1.5 py-0.5 rounded bg-surface-container-lowest text-secondary font-label-sm text-label-sm font-bold">START</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Route 402 Expressway</span>
+</div>
+</div>
+<span class="font-label-md text-label-md text-on-surface font-semibold">13:45</span>
+</div>
+<!-- Event 9: Bus Travel Stop -->
+<div class="event-item type-timer bg-surface-container-low rounded-xl p-space-sm flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<div class="w-8 h-8 rounded-lg bg-surface-container-lowest flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-[18px]">stop</span>
+</div>
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-headline-md text-body-md font-bold text-on-surface">Bus Travel</span>
+<span class="px-1.5 py-0.5 rounded bg-surface-container-lowest text-on-surface-variant font-label-sm text-label-sm font-semibold">STOP</span>
+</div>
+<span class="font-label-sm text-label-sm text-secondary font-bold">Interval: 01:10</span>
+</div>
+</div>
+<span class="font-label-md text-label-md text-on-surface font-semibold">14:55</span>
+</div>
+<!-- Event 10: Timer Resume -->
+<div class="event-item type-timer bg-surface-container-low rounded-xl p-space-sm flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<div class="w-8 h-8 rounded-lg bg-surface-container-lowest flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[18px]">play_arrow</span>
+</div>
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-headline-md text-body-md font-bold text-on-surface">Day Analysis</span>
+<span class="px-1.5 py-0.5 rounded bg-surface-container-lowest text-primary font-label-sm text-label-sm font-bold">RESUME</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Terminal Station On-site</span>
+</div>
+</div>
+<span class="font-label-md text-label-md text-primary font-bold">15:00</span>
+</div>
+<!-- Event 11: Expense Entry -->
+<div class="event-item type-expense bg-surface-container-lowest rounded-xl p-space-sm flex items-center justify-between shadow-[0_2px_12px_rgba(139,92,246,0.12)]">
+<div class="flex items-center gap-space-sm">
+<div class="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-[18px]">build</span>
+</div>
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-headline-md text-body-md font-bold text-on-surface">Hardware Supplies &amp; Return</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Logistics · 17:45</span>
+</div>
+</div>
+<div class="flex items-center gap-space-sm">
+<span class="font-label-lg text-label-lg text-secondary font-bold">₹880</span>
+<div class="flex items-center gap-1">
+<button aria-label="Edit Expense" class="p-1 text-on-surface-variant hover:text-on-surface transition-colors" onclick="alert('Edit transaction: Hardware Supplies (₹880)')" type="button">
+<span class="material-symbols-outlined text-[16px]">edit</span>
+</button>
+<button aria-label="Delete Expense" class="p-1 text-on-surface-variant hover:text-secondary transition-colors" onclick="this.closest('.event-item').remove()" type="button">
+<span class="material-symbols-outlined text-[16px]">delete</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Event 12: Timer Final Stop -->
+<div class="event-item type-timer bg-surface-container-low rounded-xl p-space-sm flex items-center justify-between shadow-[0_0_12px_rgba(212,175,55,0.15)]">
+<div class="flex items-center gap-space-sm">
+<div class="w-8 h-8 rounded-lg bg-surface-container-lowest flex items-center justify-center text-primary shadow-[0_0_8px_rgba(212,175,55,0.3)]">
+<span class="material-symbols-outlined text-[18px]">flag</span>
+</div>
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-headline-md text-body-md font-bold text-on-surface">Day Analysis</span>
+<span class="px-1.5 py-0.5 rounded bg-primary text-on-primary font-label-sm text-label-sm font-bold">STOP</span>
+</div>
+<span class="font-label-sm text-label-sm text-primary font-bold">Session Cumulative: 08:15</span>
+</div>
+</div>
+<span class="font-label-md text-label-md text-primary font-bold">18:30</span>
+</div>
+</div>
+</div>
+</div>
+<script>
+  (function initChronoVault() {
+    // 1. Date selector interaction
+    const dateChips = document.querySelectorAll('.date-chip');
+    dateChips.forEach(chip => {
+      chip.addEventListener('click', function() {
+        dateChips.forEach(c => {
+          c.classList.remove('bg-surface-container-lowest', 'text-primary', 'shadow-[0_0_16px_rgba(212,175,55,0.25)]');
+          c.classList.add('bg-surface-container-low', 'text-on-surface-variant');
+        });
+        this.classList.remove('bg-surface-container-low', 'text-on-surface-variant');
+        this.classList.add('bg-surface-container-lowest', 'text-primary', 'shadow-[0_0_16px_rgba(212,175,55,0.25)]');
+      });
+    });
+
+    // 2. Filter buttons interaction
+    const filterTabs = document.querySelectorAll('.filter-tab');
+    const items = document.querySelectorAll('.event-item');
+
+    filterTabs.forEach(tab => {
+      tab.addEventListener('click', function() {
+        filterTabs.forEach(t => {
+          t.classList.remove('bg-surface-container-high', 'text-primary', 'font-bold');
+          t.classList.add('text-on-surface-variant', 'font-medium');
+        });
+        this.classList.add('bg-surface-container-high', 'text-primary', 'font-bold');
+        this.classList.remove('text-on-surface-variant', 'font-medium');
+
+        const filter = this.dataset.filter;
+        items.forEach(item => {
+          if (filter === 'all') {
+            item.style.display = 'flex';
+          } else if (filter === 'stopwatch') {
+            item.style.display = item.classList.contains('type-timer') ? 'flex' : 'none';
+          } else if (filter === 'expense') {
+            item.style.display = item.classList.contains('type-expense') ? 'flex' : 'none';
+          }
+        });
+      });
+    });
+
+    // 3. Multi-sheet Excel (.xlsx compatible CSV archive generator)
+    const exportBtn = document.getElementById('exportExcelBtn');
+    const notice = document.getElementById('downloadNotice');
+
+    exportBtn.addEventListener('click', function() {
+      notice.classList.remove('hidden');
+
+      // Structured workbook content containing all three sheets
+      const csvData = 
+`--- SHEET 1: DAILY SUMMARY ---
+Date,Day Analysis Total,Bus Travel Total,Bus Waiting Total,Expense Total (INR)
+2024-10-24,08:15:00,01:30:00,00:45:00,1450.00
+
+--- SHEET 2: TIMER ACTIVITY CHRONO-LOG ---
+Date,Time,Timer Name,Event,Interval/Cumulative
+2024-10-24,09:00:00,Day Analysis,START,00:00:00
+2024-10-24,11:30:00,Day Analysis,PAUSE,02:30:00
+2024-10-24,12:15:00,Day Analysis,RESUME,-
+2024-10-24,13:10:00,Bus Waiting,START,00:00:00
+2024-10-24,13:45:00,Bus Waiting,STOP,00:35:00
+2024-10-24,13:45:00,Bus Travel,START,00:00:00
+2024-10-24,14:55:00,Bus Travel,STOP,01:10:00
+2024-10-24,15:00:00,Day Analysis,RESUME,-
+2024-10-24,18:30:00,Day Analysis,STOP,08:15:00
+
+--- SHEET 3: EXPENSE LEDGER ---
+Date,Time,Amount (INR),Reason,Category
+2024-10-24,09:15:00,120.00,Morning Metro Bus Ticket,Transit
+2024-10-24,13:30:00,450.00,Project Lunch Meeting,Meals
+2024-10-24,17:45:00,880.00,Hardware Supplies & Return Transit,Logistics
+`;
+
+      const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const downloadLink = document.createElement('a');
+      downloadLink.href = url;
+      downloadLink.setAttribute('download', 'Chrono_Ledger_2024-10-24.csv');
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+
+      setTimeout(() => {
+        notice.classList.add('hidden');
+      }, 4000);
+    });
+  })();
+</script></main><nav class="fixed bottom-0 w-full z-50 pb-safe bg-surface-container-lowest/95 backdrop-blur-xl shadow-[0_-2px_12px_rgba(0,0,0,0.6)]" data-active-classes="text-primary"><div class="flex justify-around items-center h-16 px-gutter"><a class="flex flex-col items-center justify-center min-w-[64px] min-h-[44px] gap-space-xs text-on-surface-variant hover:text-on-surface transition-colors" data-path="chrono-dashboard" href="#"><span class="material-symbols-outlined text-[22px]">timer</span><span class="font-label-sm text-label-sm uppercase">Chrono</span></a><a aria-current="page" class="flex flex-col items-center justify-center min-w-[64px] min-h-[44px] gap-space-xs transition-colors text-primary" data-path="daily-history-excel" href="#"><span class="material-symbols-outlined text-[22px]">receipt_long</span><span class="font-label-sm text-label-sm uppercase">Ledger</span></a><a class="flex flex-col items-center justify-center min-w-[64px] min-h-[44px] gap-space-xs text-on-surface-variant hover:text-on-surface transition-colors" data-path="analytics-vault" href="#"><span class="material-symbols-outlined text-[22px]">insights</span><span class="font-label-sm text-label-sm uppercase">Analytics</span></a></div></nav>
+
+</body></html>

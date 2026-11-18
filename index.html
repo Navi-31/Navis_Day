@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#000000" />
+    <title>Aura Daily Tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #000000;
+        color: #FFFFFF;
+        font-family: 'Manrope', sans-serif;
+        user-select: none;
+        -webkit-user-select: none;
+        overscroll-behavior: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .no-scrollbar::-webkit-scrollbar {
+        display: none;
+      }
+      .no-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+      .safe-top {
+        padding-top: env(safe-area-inset-top, 0px);
+      }
+      .safe-bottom {
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+      }
+    </style>
+  </head>
+  <body class="bg-black text-white antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

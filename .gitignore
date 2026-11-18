@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Production build artifacts
+dist/
+build/
+
+# Android build outputs & local config
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/app/*.keystore
+android/app/*.jks
+*.keystore
+*.jks
+
+# Backup archives & sensitive tracking exports
+*Database_Backup*.json
+*.xlsx
+*.sha256
+*.apk
+
+# Environment & editor
+.env
+.env.local
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db
