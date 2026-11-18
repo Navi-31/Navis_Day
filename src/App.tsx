@@ -26,10 +26,8 @@ export const App: React.FC = () => {
       <header className="fixed top-0 left-0 right-0 z-40 bg-black/90 backdrop-blur-md border-b border-[#222] safe-top">
         <div className="h-14 px-4 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full bg-[#141414] border border-[#D4AF37]/50 flex items-center justify-center shadow-[0_0_12px_rgba(212,175,55,0.25)]">
-              <span className="material-symbols-outlined text-[#D4AF37] text-[18px]">
-                watch_screentime
-              </span>
+            <div className="w-8 h-8 rounded-full bg-black border border-[#D4AF37]/60 flex items-center justify-center shadow-[0_0_12px_rgba(212,175,55,0.3)] overflow-hidden">
+              <img src="/app-icon.png" alt="NR Logo" className="w-full h-full object-cover" />
             </div>
             <div className="flex flex-col">
               <div className="flex items-center gap-1.5">
