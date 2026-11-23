@@ -110,32 +110,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const activeStatesRef = useRef(activeStates);
   activeStatesRef.current = activeStates;
 
-  // Refresh data for selected date and today
+  // Refresh data for selected date and today (Optimized with Promise.all for high performance)
   const refreshData = useCallback(async () => {
     const todayStr = formatDate();
-    const tExpenses = await dbService.getExpensesForDate(todayStr);
-    setTodayExpenses(tExpenses);
+    try {
+      const [
+        tExpenses,
+        summary,
+        events,
+        expenses,
+        balances,
+        bTxs,
+        regs,
+        allRegs,
+      ] = await Promise.all([
+        dbService.getExpensesForDate(todayStr),
+        dbService.getDailySummary(selectedDate),
+        dbService.getEventsForDate(selectedDate),
+        dbService.getExpensesForDate(selectedDate),
+        dbService.getAccountBalances(),
+        dbService.getBalanceTransactionsForDate(selectedDate),
+        dbService.getRegularizationsForDate(selectedDate),
+        dbService.getAllRegularizations(),
+      ]);
 
-    const summary = await dbService.getDailySummary(selectedDate);
-    setSelectedDateSummary(summary);
-
-    const events = await dbService.getEventsForDate(selectedDate);
-    setSelectedDateEvents(events);
-
-    const expenses = await dbService.getExpensesForDate(selectedDate);
-    setSelectedDateExpenses(expenses);
-
-    const balances = await dbService.getAccountBalances();
-    setAccountBalances(balances);
-
-    const bTxs = await dbService.getBalanceTransactionsForDate(selectedDate);
-    setSelectedDateBalanceTransactions(bTxs);
-
-    const regs = await dbService.getRegularizationsForDate(selectedDate);
-    setSelectedDateRegularizations(regs);
-
-    const allRegs = await dbService.getAllRegularizations();
-    setAllRegularizations(allRegs);
+      setTodayExpenses(tExpenses);
+      setSelectedDateSummary(summary);
+      setSelectedDateEvents(events);
+      setSelectedDateExpenses(expenses);
+      setAccountBalances(balances);
+      setSelectedDateBalanceTransactions(bTxs);
+      setSelectedDateRegularizations(regs);
+      setAllRegularizations(allRegs);
+    } catch (err) {
+      console.error('Failed to refresh data in parallel:', err);
+    }
   }, [selectedDate]);
 
   // Initial load
@@ -424,12 +433,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     amount: number,
     note?: string
   ): Promise<{ success: boolean; error?: string }> => {
+    // 1. Optimistic instant balance update in UI
+    const key = accountType.toLowerCase() as 'upi' | 'wallet';
+    setAccountBalances((prev) => ({
+      ...prev,
+      [key]: prev[key] + amount,
+    }));
+
+    // 2. Persist in database
     const res = await dbService.addAccountBalance(accountType, amount, note);
     if (res.success && res.balances) {
       setAccountBalances(res.balances);
-      await refreshData();
+      // Background non-blocking refresh so caller never waits
+      refreshData().catch(console.error);
       return { success: true };
     }
+
+    // Rollback if DB failed
+    const rollback = await dbService.getAccountBalances();
+    setAccountBalances(rollback);
     return { success: false, error: res.error };
   };
 

@@ -129,16 +129,20 @@ export const ChronoDashboard: React.FC = () => {
       return;
     }
 
-    setIsSubmittingBalance(true);
+    const target = addBalanceTarget;
+    const note = addBalanceNote;
+
+    // Instant modal close and input clear for zero UI lag
+    setIsAddBalanceModalOpen(false);
+    setAddBalanceAmount('');
+    setAddBalanceNote('');
     setBalanceModalError(null);
 
-    const res = await addAccountBalance(addBalanceTarget, val, addBalanceNote);
+    setIsSubmittingBalance(true);
+    const res = await addAccountBalance(target, val, note);
     setIsSubmittingBalance(false);
-
-    if (res.success) {
-      setIsAddBalanceModalOpen(false);
-    } else {
-      setBalanceModalError(res.error || 'Failed to add balance');
+    if (!res.success) {
+      alert(res.error || 'Failed to add balance');
     }
   };
 
@@ -742,6 +746,23 @@ export const ChronoDashboard: React.FC = () => {
                   }}
                   className="w-full bg-[#0a0a0a] border border-[#333] focus:border-[#D4AF37] text-white pl-8 pr-3 py-2 rounded-xl text-sm outline-none font-mono"
                 />
+              </div>
+
+              {/* Quick Amount Preset Chips for instant 1-tap entry */}
+              <div className="flex gap-1.5 pt-0.5">
+                {[100, 500, 1000, 2000, 5000].map((quick) => (
+                  <button
+                    key={quick}
+                    type="button"
+                    onClick={() => {
+                      setAddBalanceAmount(String(quick));
+                      if (balanceModalError) setBalanceModalError(null);
+                    }}
+                    className="flex-1 py-1 px-0.5 rounded-lg bg-[#1c1c1c] hover:bg-[#282828] border border-[#333] text-[10px] font-mono text-[#D4AF37] font-bold active:scale-95 transition-all text-center"
+                  >
+                    +₹{quick >= 1000 ? `${quick / 1000}k` : quick}
+                  </button>
+                ))}
               </div>
             </div>
 
