@@ -45,11 +45,15 @@ export const HistoryAndExport: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
 
+  // Predefined expense reasons (Requirement 1 & 4)
+  const PREDEFINED_REASONS = ['Breakfast', 'Lunch', 'Dinner', 'Snack'] as const;
+  type PredefinedReason = (typeof PREDEFINED_REASONS)[number];
+
   // Edit Expense modal
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [editAmount, setEditAmount] = useState<string>('');
-  const [editReason, setEditReason] = useState<string>('');
-  const [editCategory, setEditCategory] = useState<string>('General');
+  const [editSelectedReason, setEditSelectedReason] = useState<PredefinedReason | 'Custom' | null>(null);
+  const [editCustomReason, setEditCustomReason] = useState<string>('');
   const [editPaymentMethod, setEditPaymentMethod] = useState<PaymentMethod>('UPI');
   const [editError, setEditError] = useState<string | null>(null);
   const [isSavingEdit, setIsSavingEdit] = useState<boolean>(false);
@@ -107,8 +111,13 @@ export const HistoryAndExport: React.FC = () => {
   const handleOpenEdit = (exp: Expense) => {
     setEditingExpense(exp);
     setEditAmount(String(exp.amount));
-    setEditReason(exp.reason);
-    setEditCategory(exp.category || 'General');
+    if (['Breakfast', 'Lunch', 'Dinner', 'Snack'].includes(exp.reason)) {
+      setEditSelectedReason(exp.reason as PredefinedReason);
+      setEditCustomReason('');
+    } else {
+      setEditSelectedReason('Custom');
+      setEditCustomReason(exp.reason);
+    }
     setEditPaymentMethod(exp.paymentMethod || 'UPI');
     setEditError(null);
   };
@@ -120,8 +129,20 @@ export const HistoryAndExport: React.FC = () => {
       setEditError('Please enter a valid amount.');
       return;
     }
-    if (!editReason.trim()) {
-      setEditError('Please enter a reason/description.');
+
+    let finalReason = '';
+    if (editSelectedReason === 'Custom') {
+      if (!editCustomReason.trim()) {
+        setEditError('Please enter a custom reason.');
+        return;
+      }
+      finalReason = editCustomReason.trim();
+    } else if (editSelectedReason) {
+      finalReason = editCustomReason.trim() ? editCustomReason.trim() : editSelectedReason;
+    } else if (editCustomReason.trim()) {
+      finalReason = editCustomReason.trim();
+    } else {
+      setEditError('Please select Breakfast, Lunch, Dinner, Snack or enter a Custom Reason.');
       return;
     }
 
@@ -149,8 +170,8 @@ export const HistoryAndExport: React.FC = () => {
     const res = await editExpense({
       ...editingExpense,
       amount: parsedAmount,
-      reason: editReason.trim(),
-      category: editCategory,
+      reason: finalReason,
+      category: editSelectedReason || 'Expense',
       paymentMethod: editPaymentMethod,
     });
     setIsSavingEdit(false);
@@ -929,11 +950,11 @@ export const HistoryAndExport: React.FC = () => {
         </div>
       )}
 
-      {/* Edit Expense Modal with Balance Recalculation (Requirement 7) */}
+      {/* Edit Expense Modal with Balance Recalculation (Requirement 4 & 7) */}
       {editingExpense && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-[#141414] border border-[#8B5CF6]/50 p-5 shadow-[0_0_35px_rgba(139,92,246,0.25)] flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between border-b border-[#2A2A2A] pb-2.5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-3 sm:p-4 overflow-y-auto">
+          <div className="w-full max-w-sm max-h-[85vh] rounded-2xl bg-[#141414] border border-[#8B5CF6]/50 shadow-[0_0_35px_rgba(139,92,246,0.25)] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-[#2A2A2A] p-4 pb-2.5 flex-shrink-0">
               <span className="font-mono text-xs uppercase tracking-widest text-[#A78BFA] font-bold">
                 EDIT EXPENSE TRANSACTION
               </span>
@@ -946,77 +967,150 @@ export const HistoryAndExport: React.FC = () => {
               </button>
             </div>
 
-            {editError && (
-              <div className="p-2.5 rounded-xl bg-red-950/60 border border-red-800 text-red-300 text-xs font-mono">
-                {editError}
-              </div>
-            )}
+            <div className="p-4 overflow-y-auto flex-1 flex flex-col gap-3.5 no-scrollbar">
+              {editError && (
+                <div className="p-2.5 rounded-xl bg-red-950/60 border border-red-800 text-red-300 text-xs font-mono">
+                  {editError}
+                </div>
+              )}
 
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-mono text-gray-400">Amount (INR)</label>
-              <input
-                type="number"
-                step="any"
-                value={editAmount}
-                onChange={(e) => {
-                  setEditAmount(e.target.value);
-                  if (editError) setEditError(null);
-                }}
-                className="w-full bg-[#0a0a0a] border border-[#333] focus:border-[#8B5CF6] text-white px-3 py-2 rounded-xl text-sm outline-none font-mono"
-              />
-            </div>
-
-            {/* Payment Method Selector */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-mono text-gray-400">Payment Source</label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditPaymentMethod('UPI');
-                    setEditError(null);
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-mono text-gray-400">Amount (INR)</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={editAmount}
+                  onChange={(e) => {
+                    setEditAmount(e.target.value);
+                    if (editError) setEditError(null);
                   }}
-                  className={`flex flex-col p-2 rounded-xl border text-left ${
-                    editPaymentMethod === 'UPI'
-                      ? 'border-[#D4AF37] bg-[#D4AF37]/20 text-[#D4AF37]'
-                      : 'border-[#2A2A2A] bg-[#0c0c0c] text-gray-400'
-                  }`}
-                >
-                  <span className="font-mono text-xs font-bold">UPI</span>
-                  <span className="font-mono text-[9px]">Avail: ₹{accountBalances.upi.toLocaleString('en-IN')}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditPaymentMethod('WALLET');
-                    setEditError(null);
+                  className="w-full bg-[#0a0a0a] border border-[#333] focus:border-[#8B5CF6] text-white px-3 py-2 rounded-xl text-sm outline-none font-mono"
+                />
+              </div>
+
+              {/* Payment Method Selector */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-mono text-gray-400">Payment Source</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditPaymentMethod('UPI');
+                      setEditError(null);
+                    }}
+                    className={`flex flex-col p-2 rounded-xl border text-left ${
+                      editPaymentMethod === 'UPI'
+                        ? 'border-[#D4AF37] bg-[#D4AF37]/20 text-[#D4AF37]'
+                        : 'border-[#2A2A2A] bg-[#0c0c0c] text-gray-400'
+                    }`}
+                  >
+                    <span className="font-mono text-xs font-bold">UPI</span>
+                    <span className="font-mono text-[9px]">Avail: ₹{accountBalances.upi.toLocaleString('en-IN')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditPaymentMethod('WALLET');
+                      setEditError(null);
+                    }}
+                    className={`flex flex-col p-2 rounded-xl border text-left ${
+                      editPaymentMethod === 'WALLET'
+                        ? 'border-[#8B5CF6] bg-[#8B5CF6]/20 text-[#A78BFA]'
+                        : 'border-[#2A2A2A] bg-[#0c0c0c] text-gray-400'
+                    }`}
+                  >
+                    <span className="font-mono text-xs font-bold">WALLET</span>
+                    <span className="font-mono text-[9px]">Avail: ₹{accountBalances.wallet.toLocaleString('en-IN')}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Predefined Expense Reason Chips (Requirement 1 & 4) */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-mono text-gray-300 font-semibold">Expense Reason</label>
+                <div className="grid grid-cols-5 gap-1.5">
+                  {PREDEFINED_REASONS.map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => {
+                        setEditSelectedReason(opt);
+                        if (editError) setEditError(null);
+                      }}
+                      className={`py-2 px-0.5 rounded-xl text-xs font-mono font-bold transition-all text-center ${
+                        editSelectedReason === opt
+                          ? 'bg-[#D4AF37] text-black shadow-[0_0_12px_rgba(212,175,55,0.4)] border border-[#D4AF37]'
+                          : 'bg-[#1e1e1e] text-gray-300 border border-[#333] hover:border-gray-500 hover:text-white'
+                      }`}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditSelectedReason('Custom');
+                      if (editError) setEditError(null);
+                    }}
+                    className={`py-2 px-0.5 rounded-xl text-xs font-mono font-bold transition-all text-center ${
+                      editSelectedReason === 'Custom'
+                        ? 'bg-[#8B5CF6] text-white shadow-[0_0_12px_rgba(139,92,246,0.4)] border border-[#8B5CF6]'
+                        : 'bg-[#1e1e1e] text-gray-400 border border-[#333] hover:border-[#8B5CF6]/50 hover:text-white'
+                    }`}
+                  >
+                    Custom
+                  </button>
+                </div>
+              </div>
+
+              {/* Custom Reason Text Input (Requirement 2, 3, 4) */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-mono text-gray-300 font-semibold flex items-center gap-1">
+                    <span>Custom Reason</span>
+                    {editSelectedReason === 'Custom' && (
+                      <span className="text-red-400 font-bold">*</span>
+                    )}
+                  </label>
+                  {editSelectedReason && editSelectedReason !== 'Custom' && (
+                    <span className="text-[10px] font-mono text-gray-400">Optional for {editSelectedReason}</span>
+                  )}
+                  {editSelectedReason === 'Custom' && (
+                    <span className="text-[10px] font-mono text-[#A78BFA]">Mandatory</span>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  placeholder={
+                    editSelectedReason === 'Custom'
+                      ? 'Enter custom reason (mandatory)...'
+                      : editSelectedReason
+                      ? `Optional details for ${editSelectedReason}...`
+                      : 'Select an option above or enter custom reason...'
+                  }
+                  value={editCustomReason}
+                  onFocus={() => {
+                    if (!editSelectedReason) {
+                      setEditSelectedReason('Custom');
+                    }
                   }}
-                  className={`flex flex-col p-2 rounded-xl border text-left ${
-                    editPaymentMethod === 'WALLET'
-                      ? 'border-[#8B5CF6] bg-[#8B5CF6]/20 text-[#A78BFA]'
-                      : 'border-[#2A2A2A] bg-[#0c0c0c] text-gray-400'
+                  onChange={(e) => {
+                    setEditCustomReason(e.target.value);
+                    if (!editSelectedReason) {
+                      setEditSelectedReason('Custom');
+                    }
+                    if (editError) setEditError(null);
+                  }}
+                  className={`w-full bg-[#0a0a0a] border text-white px-3 py-2 rounded-xl text-sm outline-none font-sans transition-colors ${
+                    editSelectedReason === 'Custom'
+                      ? 'border-[#8B5CF6] focus:border-[#A78BFA]'
+                      : 'border-[#333] focus:border-[#D4AF37]'
                   }`}
-                >
-                  <span className="font-mono text-xs font-bold">WALLET</span>
-                  <span className="font-mono text-[9px]">Avail: ₹{accountBalances.wallet.toLocaleString('en-IN')}</span>
-                </button>
+                />
               </div>
             </div>
 
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-mono text-gray-400">Reason / Description</label>
-              <input
-                type="text"
-                value={editReason}
-                onChange={(e) => {
-                  setEditReason(e.target.value);
-                  if (editError) setEditError(null);
-                }}
-                className="w-full bg-[#0a0a0a] border border-[#333] focus:border-[#8B5CF6] text-white px-3 py-2 rounded-xl text-sm outline-none"
-              />
-            </div>
-
-            <div className="flex gap-2 pt-2 border-t border-[#2A2A2A]">
+            <div className="flex gap-2 p-3.5 border-t border-[#2A2A2A] bg-[#141414] flex-shrink-0">
               <button
                 type="button"
                 onClick={() => setEditingExpense(null)}
@@ -1026,9 +1120,18 @@ export const HistoryAndExport: React.FC = () => {
               </button>
               <button
                 type="button"
-                disabled={isSavingEdit || !editAmount || parseFloat(editAmount) <= 0}
+                disabled={
+                  isSavingEdit ||
+                  !editAmount ||
+                  parseFloat(editAmount) <= 0 ||
+                  !(
+                    (editSelectedReason && editSelectedReason !== 'Custom') ||
+                    (editSelectedReason === 'Custom' && editCustomReason.trim().length > 0) ||
+                    editCustomReason.trim().length > 0
+                  )
+                }
                 onClick={handleSaveEdit}
-                className="flex-1 py-2.5 rounded-xl bg-[#8B5CF6] text-white font-mono text-xs font-bold hover:bg-[#A78BFA] shadow-[0_0_15px_rgba(139,92,246,0.3)] transition-all"
+                className="flex-1 py-2.5 rounded-xl bg-[#8B5CF6] text-white font-mono text-xs font-bold hover:bg-[#A78BFA] shadow-[0_0_15px_rgba(139,92,246,0.3)] transition-all disabled:opacity-40"
               >
                 {isSavingEdit ? 'UPDATING...' : 'UPDATE'}
               </button>

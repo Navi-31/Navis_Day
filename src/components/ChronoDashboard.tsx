@@ -29,11 +29,15 @@ export const ChronoDashboard: React.FC = () => {
     addExpense,
   } = useApp();
 
+  // Predefined expense reasons (Requirement 1)
+  const PREDEFINED_REASONS = ['Breakfast', 'Lunch', 'Dinner', 'Snack'] as const;
+  type PredefinedReason = (typeof PREDEFINED_REASONS)[number];
+
   // Expense entry state
   const [amountInput, setAmountInput] = useState<string>('');
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
-  const [expenseReason, setExpenseReason] = useState<string>('');
-  const [expenseCategory, setExpenseCategory] = useState<string>('Transit');
+  const [selectedReasonOption, setSelectedReasonOption] = useState<PredefinedReason | 'Custom' | null>(null);
+  const [customReason, setCustomReason] = useState<string>('');
   const [expensePaymentMethod, setExpensePaymentMethod] = useState<PaymentMethod>('UPI');
   const [isSubmittingExpense, setIsSubmittingExpense] = useState(false);
   const [expenseError, setExpenseError] = useState<string | null>(null);
@@ -51,17 +55,36 @@ export const ChronoDashboard: React.FC = () => {
     const val = parseFloat(amountInput);
     if (!isNaN(val) && val > 0) {
       setExpenseError(null);
+      setSelectedReasonOption(null);
+      setCustomReason('');
       setIsExpenseModalOpen(true);
     }
   };
+
+  const isReasonValid = Boolean(
+    (selectedReasonOption && selectedReasonOption !== 'Custom') ||
+    (selectedReasonOption === 'Custom' && customReason.trim().length > 0) ||
+    customReason.trim().length > 0
+  );
 
   const handleSaveExpense = async () => {
     if (isSubmittingExpense) return;
     const val = parseFloat(amountInput);
     if (isNaN(val) || val <= 0) return;
 
-    if (!expenseReason.trim()) {
-      setExpenseError('Please enter what you spent this on.');
+    let finalReason = '';
+    if (selectedReasonOption === 'Custom') {
+      if (!customReason.trim()) {
+        setExpenseError('Please enter a custom reason.');
+        return;
+      }
+      finalReason = customReason.trim();
+    } else if (selectedReasonOption) {
+      finalReason = customReason.trim() ? customReason.trim() : selectedReasonOption;
+    } else if (customReason.trim()) {
+      finalReason = customReason.trim();
+    } else {
+      setExpenseError('Please select Breakfast, Lunch, Dinner, Snack or enter a Custom Reason.');
       return;
     }
 
@@ -77,12 +100,13 @@ export const ChronoDashboard: React.FC = () => {
     setIsSubmittingExpense(true);
     setExpenseError(null);
 
-    const res = await addExpense(val, expenseReason.trim(), expenseCategory, expensePaymentMethod);
+    const res = await addExpense(val, finalReason, selectedReasonOption || 'Expense', expensePaymentMethod);
     setIsSubmittingExpense(false);
 
     if (res.success) {
       setAmountInput('');
-      setExpenseReason('');
+      setSelectedReasonOption(null);
+      setCustomReason('');
       setIsExpenseModalOpen(false);
     } else {
       setExpenseError(res.error || 'Failed to save expense');
@@ -570,41 +594,88 @@ export const ChronoDashboard: React.FC = () => {
                 </div>
               )}
 
-              {/* Expense Reason / Note */}
+              {/* Predefined Expense Reason Chips (Requirement 1 & 3) */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-mono text-gray-400">What did you spend this on?</label>
-                <input
-                  type="text"
-                  autoFocus
-                  placeholder="e.g. Metro Ticket, Coffee, Grocery"
-                  value={expenseReason}
-                  onChange={(e) => {
-                    setExpenseReason(e.target.value);
-                    if (expenseError) setExpenseError(null);
-                  }}
-                  className="w-full bg-[#0a0a0a] border border-[#333] focus:border-[#D4AF37] text-white px-3 py-2 rounded-xl text-sm outline-none font-sans"
-                />
-              </div>
-
-              {/* Expense Category */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-mono text-gray-400">Category</label>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {['Transit', 'Meals', 'Logistics', 'Supplies', 'Personal', 'General'].map((cat) => (
+                <label className="text-xs font-mono text-gray-300 font-semibold">Expense Reason</label>
+                <div className="grid grid-cols-5 gap-1.5">
+                  {PREDEFINED_REASONS.map((opt) => (
                     <button
-                      key={cat}
+                      key={opt}
                       type="button"
-                      onClick={() => setExpenseCategory(cat)}
-                      className={`py-1.5 rounded-lg text-xs font-mono transition-colors ${
-                        expenseCategory === cat
-                          ? 'bg-[#D4AF37] text-black font-bold'
-                          : 'bg-[#202020] text-gray-300 hover:bg-[#282828]'
+                      onClick={() => {
+                        setSelectedReasonOption(opt);
+                        if (expenseError) setExpenseError(null);
+                      }}
+                      className={`py-2 px-0.5 rounded-xl text-xs font-mono font-bold transition-all text-center ${
+                        selectedReasonOption === opt
+                          ? 'bg-[#D4AF37] text-black shadow-[0_0_12px_rgba(212,175,55,0.4)] border border-[#D4AF37]'
+                          : 'bg-[#1e1e1e] text-gray-300 border border-[#333] hover:border-gray-500 hover:text-white'
                       }`}
                     >
-                      {cat}
+                      {opt}
                     </button>
                   ))}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedReasonOption('Custom');
+                      if (expenseError) setExpenseError(null);
+                    }}
+                    className={`py-2 px-0.5 rounded-xl text-xs font-mono font-bold transition-all text-center ${
+                      selectedReasonOption === 'Custom'
+                        ? 'bg-[#8B5CF6] text-white shadow-[0_0_12px_rgba(139,92,246,0.4)] border border-[#8B5CF6]'
+                        : 'bg-[#1e1e1e] text-gray-400 border border-[#333] hover:border-[#8B5CF6]/50 hover:text-white'
+                    }`}
+                  >
+                    Custom
+                  </button>
                 </div>
+              </div>
+
+              {/* Custom Reason Text Input (Requirement 2 & 3) */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-mono text-gray-300 font-semibold flex items-center gap-1">
+                    <span>Custom Reason</span>
+                    {selectedReasonOption === 'Custom' && (
+                      <span className="text-red-400 font-bold">*</span>
+                    )}
+                  </label>
+                  {selectedReasonOption && selectedReasonOption !== 'Custom' && (
+                    <span className="text-[10px] font-mono text-gray-400">Optional for {selectedReasonOption}</span>
+                  )}
+                  {selectedReasonOption === 'Custom' && (
+                    <span className="text-[10px] font-mono text-[#A78BFA]">Mandatory</span>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  placeholder={
+                    selectedReasonOption === 'Custom'
+                      ? 'Enter custom reason (mandatory)...'
+                      : selectedReasonOption
+                      ? `Optional details for ${selectedReasonOption}...`
+                      : 'Select an option above or enter custom reason...'
+                  }
+                  value={customReason}
+                  onFocus={() => {
+                    if (!selectedReasonOption) {
+                      setSelectedReasonOption('Custom');
+                    }
+                  }}
+                  onChange={(e) => {
+                    setCustomReason(e.target.value);
+                    if (!selectedReasonOption) {
+                      setSelectedReasonOption('Custom');
+                    }
+                    if (expenseError) setExpenseError(null);
+                  }}
+                  className={`w-full bg-[#0a0a0a] border text-white px-3 py-2 rounded-xl text-sm outline-none font-sans transition-colors ${
+                    selectedReasonOption === 'Custom'
+                      ? 'border-[#8B5CF6] focus:border-[#A78BFA]'
+                      : 'border-[#333] focus:border-[#D4AF37]'
+                  }`}
+                />
               </div>
             </div>
 
@@ -619,7 +690,7 @@ export const ChronoDashboard: React.FC = () => {
               </button>
               <button
                 type="button"
-                disabled={isSubmittingExpense || hasInsufficientBalance || !expenseReason.trim()}
+                disabled={isSubmittingExpense || hasInsufficientBalance || !isReasonValid}
                 onClick={handleSaveExpense}
                 className="flex-1 py-2.5 rounded-xl bg-[#D4AF37] text-black font-mono text-xs font-bold hover:bg-[#F5D061] disabled:opacity-40 disabled:pointer-events-none transition-all shadow-[0_0_15px_rgba(212,175,55,0.3)]"
               >
