@@ -3,7 +3,7 @@ import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { dbService } from './database';
-import { formatDate, formatDuration } from '../utils/time';
+import { formatDate, formatTime, formatDuration } from '../utils/time';
 
 export interface ExportFilter {
   dateStr?: string; // If set, exports for that specific date; otherwise all time
@@ -50,9 +50,10 @@ export async function generateAndExportExcel(filter?: ExportFilter): Promise<{ s
       'Timer Name': e.timerName,
       'Event': e.eventType,
       'Duration': e.durationMs ? formatDuration(e.durationMs) : (e.note ?? '-'),
+      'Regularized': e.eventType === 'REGULARIZE' ? 'YES' : 'NO',
     }));
 
-    // Sheet 3: Expense Log
+    // Sheet 3: Expense Log (with Payment Method)
     let expenses = await dbService.getAllExpenses();
     if (isSingleDate && filterDateStr) {
       expenses = expenses.filter((e) => e.dateStr === filterDateStr);
@@ -61,8 +62,39 @@ export async function generateAndExportExcel(filter?: ExportFilter): Promise<{ s
       'Date': e.dateStr,
       'Time': e.timeStr,
       'Amount (INR)': e.amount,
+      'Payment Method': e.paymentMethod || 'UPI',
       'Reason': e.reason,
       'Category': e.category ?? 'General',
+    }));
+
+    // Sheet 4: Balance Transactions (Additions & Deductions)
+    let balanceTxs = await dbService.getAllBalanceTransactions();
+    if (isSingleDate && filterDateStr) {
+      balanceTxs = balanceTxs.filter((tx) => tx.dateStr === filterDateStr);
+    }
+    const balanceTxRows = balanceTxs.map((tx) => ({
+      'Date': tx.dateStr,
+      'Time': tx.timeStr,
+      'Account Type': tx.accountType,
+      'Transaction': tx.transactionType,
+      'Amount (INR)': tx.amount,
+      'Note / Description': tx.note || '-',
+    }));
+
+    // Sheet 5: Regularization Audit Trail
+    let regularizations = await dbService.getAllRegularizations();
+    if (isSingleDate && filterDateStr) {
+      regularizations = regularizations.filter((r) => r.regularizedDateStr === filterDateStr);
+    }
+    const regRows = regularizations.map((r) => ({
+      'Audit ID': r.id,
+      'Date': r.regularizedDateStr,
+      'Timer Name': r.timerName,
+      'Start Time': formatTime(r.regularizedStartMs),
+      'End Time': formatTime(r.regularizedEndMs),
+      'Duration': formatDuration(r.regularizedDurationMs, true),
+      'Reason for Regularization': r.reason,
+      'Recorded At': new Date(r.createdAtMs).toISOString(),
     }));
 
     // Create workbook
@@ -72,20 +104,28 @@ export async function generateAndExportExcel(filter?: ExportFilter): Promise<{ s
       'Date': '-', 'Day Analysis': '00:00', 'Bus Travel': '00:00', 'Waiting': '00:00', 'Expense (INR)': 0
     }]);
     const wsEvents = XLSX.utils.json_to_sheet(eventRows.length > 0 ? eventRows : [{
-      'Date': '-', 'Time': '-', 'Timer Name': '-', 'Event': '-', 'Duration': '-'
+      'Date': '-', 'Time': '-', 'Timer Name': '-', 'Event': '-', 'Duration': '-', 'Regularized': 'NO'
     }]);
     const wsExpenses = XLSX.utils.json_to_sheet(expenseRows.length > 0 ? expenseRows : [{
-      'Date': '-', 'Time': '-', 'Amount (INR)': 0, 'Reason': '-', 'Category': '-'
+      'Date': '-', 'Time': '-', 'Amount (INR)': 0, 'Payment Method': 'UPI', 'Reason': '-', 'Category': '-'
+    }]);
+    const wsBalanceTxs = XLSX.utils.json_to_sheet(balanceTxRows.length > 0 ? balanceTxRows : [{
+      'Date': '-', 'Time': '-', 'Account Type': '-', 'Transaction': '-', 'Amount (INR)': 0, 'Note / Description': '-'
+    }]);
+    const wsRegularizations = XLSX.utils.json_to_sheet(regRows.length > 0 ? regRows : [{
+      'Audit ID': '-', 'Date': '-', 'Timer Name': '-', 'Start Time': '-', 'End Time': '-', 'Duration': '-', 'Reason for Regularization': '-', 'Recorded At': '-'
     }]);
 
     XLSX.utils.book_append_sheet(wb, wsSummary, 'Daily Summary');
     XLSX.utils.book_append_sheet(wb, wsEvents, 'Timer Activity Log');
     XLSX.utils.book_append_sheet(wb, wsExpenses, 'Expense Log');
+    XLSX.utils.book_append_sheet(wb, wsBalanceTxs, 'Balance Transactions');
+    XLSX.utils.book_append_sheet(wb, wsRegularizations, 'Regularization Audit');
 
     const timestamp = formatDate().replace(/-/g, '_');
     const filename = isSingleDate && filterDateStr 
-      ? `Aura_Tracker_${filterDateStr.replace(/-/g, '_')}.xlsx`
-      : `Aura_Tracker_Archive_${timestamp}.xlsx`;
+      ? `NR_Tracker_${filterDateStr.replace(/-/g, '_')}.xlsx`
+      : `NR_Tracker_Archive_${timestamp}.xlsx`;
 
     // Write file
     if (Capacitor.isNativePlatform()) {
@@ -98,8 +138,8 @@ export async function generateAndExportExcel(filter?: ExportFilter): Promise<{ s
       });
 
       await Share.share({
-        title: 'Aura Daily Tracker Export',
-        text: `Excel export from Aura Daily Tracker: ${filename}`,
+        title: 'NR Daily Tracker Export',
+        text: `Excel export from NR Daily Tracker: ${filename}`,
         url: writeResult.uri,
         dialogTitle: 'Export Excel Workbook',
       });

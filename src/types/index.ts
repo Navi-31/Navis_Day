@@ -2,7 +2,9 @@ export type TimerId = 'day_analysis' | 'bus_waiting' | 'bus_travel';
 
 export type TimerStatus = 'IDLE' | 'RUNNING' | 'PAUSED';
 
-export type EventType = 'START' | 'PAUSE' | 'RESUME' | 'STOP';
+export type EventType = 'START' | 'PAUSE' | 'RESUME' | 'STOP' | 'REGULARIZE';
+
+export type PaymentMethod = 'UPI' | 'WALLET';
 
 export interface TimerConfig {
   id: TimerId;
@@ -41,6 +43,25 @@ export interface TimerSession {
   startMs: number;
   endMs: number;
   durationMs: number;
+  isRegularized?: boolean;
+  regularizationReason?: string;
+}
+
+export interface TimerRegularization {
+  id: string;
+  sessionId?: string;
+  timerId: TimerId;
+  timerName: string;
+  originalDateStr?: string;
+  originalStartMs?: number;
+  originalEndMs?: number;
+  originalDurationMs?: number;
+  regularizedDateStr: string;
+  regularizedStartMs: number;
+  regularizedEndMs: number;
+  regularizedDurationMs: number;
+  reason: string;
+  createdAtMs: number;
 }
 
 export interface Expense {
@@ -51,6 +72,24 @@ export interface Expense {
   amount: number;
   reason: string;
   category?: string;
+  paymentMethod: PaymentMethod;
+}
+
+export interface AccountBalances {
+  upi: number;
+  wallet: number;
+}
+
+export interface BalanceTransaction {
+  id: string;
+  accountType: PaymentMethod;
+  transactionType: 'CREDIT' | 'DEBIT' | 'REVERSAL';
+  amount: number;
+  dateStr: string; // DD-MM-YYYY
+  timeStr: string; // HH:MM
+  timestampMs: number;
+  referenceId?: string;
+  note?: string;
 }
 
 export interface DailySummary {

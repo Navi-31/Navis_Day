@@ -8,14 +8,18 @@ import {
   TimerActiveState,
   TimerEvent,
   TimerSession,
+  TimerRegularization,
   Expense,
   DailySummary,
   TimerId,
+  PaymentMethod,
+  AccountBalances,
+  BalanceTransaction,
 } from '../types';
-import { formatDate, splitDurationAcrossMidnight } from '../utils/time';
+import { formatDate, formatTime, formatDuration, splitDurationAcrossMidnight } from '../utils/time';
 
 const DB_NAME = 'aura_tracker_db';
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 class DatabaseService {
   private sqlite: SQLiteConnection | null = null;
@@ -62,7 +66,7 @@ class DatabaseService {
 
     // Ensure default timer rows exist
     await this.ensureDefaultTimerStates();
-    // Purge any legacy sample/mock seed data (such as the initial ₹1,450 expense entries)
+    // Purge any legacy sample/mock seed data
     await this.purgeMockSeedData();
     this.initialized = true;
   }
@@ -105,7 +109,9 @@ class DatabaseService {
         date_str TEXT NOT NULL,
         start_ms INTEGER NOT NULL,
         end_ms INTEGER NOT NULL,
-        duration_ms INTEGER NOT NULL
+        duration_ms INTEGER NOT NULL,
+        is_regularized INTEGER DEFAULT 0,
+        regularization_reason TEXT
       );
 
       CREATE TABLE IF NOT EXISTS expenses (
@@ -115,7 +121,43 @@ class DatabaseService {
         timestamp_ms INTEGER NOT NULL,
         amount REAL NOT NULL,
         reason TEXT NOT NULL,
-        category TEXT
+        category TEXT,
+        payment_method TEXT NOT NULL DEFAULT 'UPI'
+      );
+
+      CREATE TABLE IF NOT EXISTS account_balances (
+        id TEXT PRIMARY KEY,
+        balance REAL NOT NULL DEFAULT 0,
+        last_updated_ms INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS balance_transactions (
+        id TEXT PRIMARY KEY,
+        account_type TEXT NOT NULL,
+        transaction_type TEXT NOT NULL,
+        amount REAL NOT NULL,
+        date_str TEXT NOT NULL,
+        time_str TEXT NOT NULL,
+        timestamp_ms INTEGER NOT NULL,
+        reference_id TEXT,
+        note TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS timer_regularizations (
+        id TEXT PRIMARY KEY,
+        session_id TEXT,
+        timer_id TEXT NOT NULL,
+        timer_name TEXT NOT NULL,
+        original_date_str TEXT,
+        original_start_ms INTEGER,
+        original_end_ms INTEGER,
+        original_duration_ms INTEGER,
+        regularized_date_str TEXT NOT NULL,
+        regularized_start_ms INTEGER NOT NULL,
+        regularized_end_ms INTEGER NOT NULL,
+        regularized_duration_ms INTEGER NOT NULL,
+        reason TEXT NOT NULL,
+        created_at_ms INTEGER NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS app_settings (
@@ -126,12 +168,43 @@ class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_events_date ON timer_events (date_str);
       CREATE INDEX IF NOT EXISTS idx_sessions_date ON timer_sessions (date_str);
       CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses (date_str);
+      CREATE INDEX IF NOT EXISTS idx_bal_tx_date ON balance_transactions (date_str);
+      CREATE INDEX IF NOT EXISTS idx_regularizations_date ON timer_regularizations (regularized_date_str);
     `;
 
     await this.db.execute(createTablesSQL);
+
+    // Safe ALTER TABLE for existing databases
+    try {
+      await this.db.execute("ALTER TABLE expenses ADD COLUMN payment_method TEXT DEFAULT 'UPI'");
+    } catch {
+      // Column already exists
+    }
+    try {
+      await this.db.execute("ALTER TABLE timer_sessions ADD COLUMN is_regularized INTEGER DEFAULT 0");
+    } catch {
+      // Column already exists
+    }
+    try {
+      await this.db.execute("ALTER TABLE timer_sessions ADD COLUMN regularization_reason TEXT");
+    } catch {
+      // Column already exists
+    }
+
+    // Default account balances if not already present
+    const now = Date.now();
     await this.db.run(
-      'INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)',
-      [SCHEMA_VERSION, Date.now()]
+      'INSERT OR IGNORE INTO account_balances (id, balance, last_updated_ms) VALUES (?, ?, ?)',
+      ['upi', 0, now]
+    );
+    await this.db.run(
+      'INSERT OR IGNORE INTO account_balances (id, balance, last_updated_ms) VALUES (?, ?, ?)',
+      ['wallet', 0, now]
+    );
+
+    await this.db.run(
+      'INSERT OR REPLACE INTO schema_migrations (version, applied_at) VALUES (?, ?)',
+      [SCHEMA_VERSION, now]
     );
   }
 
@@ -142,6 +215,42 @@ class DatabaseService {
         migrationsKey,
         JSON.stringify([{ version: SCHEMA_VERSION, applied_at: Date.now() }])
       );
+    }
+
+    const balancesKey = this.webStorageKeyPrefix + 'account_balances';
+    if (!localStorage.getItem(balancesKey)) {
+      localStorage.setItem(balancesKey, JSON.stringify({ upi: 0, wallet: 0 }));
+    }
+
+    const txKey = this.webStorageKeyPrefix + 'balance_transactions';
+    if (!localStorage.getItem(txKey)) {
+      localStorage.setItem(txKey, JSON.stringify([]));
+    }
+
+    const regKey = this.webStorageKeyPrefix + 'timer_regularizations';
+    if (!localStorage.getItem(regKey)) {
+      localStorage.setItem(regKey, JSON.stringify([]));
+    }
+
+    // Backfill paymentMethod on existing expenses in web storage
+    const expKey = this.webStorageKeyPrefix + 'expenses';
+    const storedExp = localStorage.getItem(expKey);
+    if (storedExp) {
+      try {
+        const expenses: Expense[] = JSON.parse(storedExp);
+        let modified = false;
+        expenses.forEach((e) => {
+          if (!e.paymentMethod) {
+            e.paymentMethod = 'UPI';
+            modified = true;
+          }
+        });
+        if (modified) {
+          localStorage.setItem(expKey, JSON.stringify(expenses));
+        }
+      } catch {
+        // ignore
+      }
     }
   }
 
@@ -218,7 +327,7 @@ class DatabaseService {
           state.status,
           state.sessionStartTimeMs,
           state.accumulatedDurationMs,
-          Date.now(),
+          state.lastUpdatedMs,
         ]
       );
     } else {
@@ -229,39 +338,33 @@ class DatabaseService {
 
   // --- TIMER EVENTS ---
 
-  public async logTimerEvent(event: Omit<TimerEvent, 'id'>): Promise<TimerEvent> {
-    const fullEvent: TimerEvent = {
-      ...event,
-      id: 'evt_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
-    };
-
+  public async logTimerEvent(event: Omit<TimerEvent, 'id'> & { id?: string }): Promise<void> {
+    const eventId = event.id ?? 'evt_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
     if (this.isNative && this.db) {
       await this.db.run(
         `INSERT INTO timer_events 
          (id, timer_id, timer_name, event_type, timestamp_ms, date_str, time_str, duration_ms, note) 
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          fullEvent.id,
-          fullEvent.timerId,
-          fullEvent.timerName,
-          fullEvent.eventType,
-          fullEvent.timestampMs,
-          fullEvent.dateStr,
-          fullEvent.timeStr,
-          fullEvent.durationMs ?? null,
-          fullEvent.note ?? null,
+          eventId,
+          event.timerId,
+          event.timerName,
+          event.eventType,
+          event.timestampMs,
+          event.dateStr,
+          event.timeStr,
+          event.durationMs ?? null,
+          event.note ?? null,
         ]
       );
     } else {
       const events = await this.getAllEvents();
-      events.push(fullEvent);
+      events.push({ ...event, id: eventId });
       localStorage.setItem(
         this.webStorageKeyPrefix + 'timer_events',
         JSON.stringify(events)
       );
     }
-
-    return fullEvent;
   }
 
   public async getEventsForDate(dateStr: string): Promise<TimerEvent[]> {
@@ -279,7 +382,7 @@ class DatabaseService {
           timestampMs: Number(r.timestamp_ms),
           dateStr: r.date_str,
           timeStr: r.time_str,
-          durationMs: r.duration_ms ? Number(r.duration_ms) : undefined,
+          durationMs: r.duration_ms !== null ? Number(r.duration_ms) : undefined,
           note: r.note,
         }));
       }
@@ -304,7 +407,7 @@ class DatabaseService {
           timestampMs: Number(r.timestamp_ms),
           dateStr: r.date_str,
           timeStr: r.time_str,
-          durationMs: r.duration_ms ? Number(r.duration_ms) : undefined,
+          durationMs: r.duration_ms !== null ? Number(r.duration_ms) : undefined,
           note: r.note,
         }));
       }
@@ -315,7 +418,7 @@ class DatabaseService {
     }
   }
 
-  // --- TIMER SESSIONS (FOR ACCURATE DAILY SUMMARY INCLUDING MIDNIGHT SPLITS) ---
+  // --- TIMER SESSIONS ---
 
   public async recordTimerSession(
     timerId: TimerId,
@@ -323,40 +426,30 @@ class DatabaseService {
     startMs: number,
     endMs: number
   ): Promise<void> {
-    if (endMs <= startMs) return;
-
-    // Split across midnight
     const slices = splitDurationAcrossMidnight(startMs, endMs);
-
     for (const slice of slices) {
-      const session: TimerSession = {
-        id: 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
-        timerId,
-        timerName,
-        dateStr: slice.dateStr,
-        startMs,
-        endMs,
-        durationMs: slice.durationMs,
-      };
+      if (slice.durationMs <= 0) continue;
+      const sessionId = 'ses_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
 
       if (this.isNative && this.db) {
         await this.db.run(
           `INSERT INTO timer_sessions 
-           (id, timer_id, timer_name, date_str, start_ms, end_ms, duration_ms) 
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [
-            session.id,
-            session.timerId,
-            session.timerName,
-            session.dateStr,
-            session.startMs,
-            session.endMs,
-            session.durationMs,
-          ]
+           (id, timer_id, timer_name, date_str, start_ms, end_ms, duration_ms, is_regularized, regularization_reason) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL)`,
+          [sessionId, timerId, timerName, slice.dateStr, startMs, endMs, slice.durationMs]
         );
       } else {
         const sessions = await this.getAllSessions();
-        sessions.push(session);
+        sessions.push({
+          id: sessionId,
+          timerId,
+          timerName,
+          dateStr: slice.dateStr,
+          startMs,
+          endMs,
+          durationMs: slice.durationMs,
+          isRegularized: false,
+        });
         localStorage.setItem(
           this.webStorageKeyPrefix + 'timer_sessions',
           JSON.stringify(sessions)
@@ -380,6 +473,8 @@ class DatabaseService {
           startMs: Number(r.start_ms),
           endMs: Number(r.end_ms),
           durationMs: Number(r.duration_ms),
+          isRegularized: Boolean(r.is_regularized),
+          regularizationReason: r.regularization_reason || undefined,
         }));
       }
       return [];
@@ -403,6 +498,8 @@ class DatabaseService {
           startMs: Number(r.start_ms),
           endMs: Number(r.end_ms),
           durationMs: Number(r.duration_ms),
+          isRegularized: Boolean(r.is_regularized),
+          regularizationReason: r.regularization_reason || undefined,
         }));
       }
       return [];
@@ -412,80 +509,648 @@ class DatabaseService {
     }
   }
 
-  // --- EXPENSES ---
+  // --- REGULARIZATION ---
 
-  public async saveExpense(expense: Omit<Expense, 'id'>): Promise<Expense> {
-    const fullExpense: Expense = {
-      ...expense,
-      id: 'exp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+  public async regularizeTimerSession(params: {
+    sessionId?: string;
+    timerId: TimerId;
+    timerName: string;
+    regularizedDateStr: string;
+    regularizedStartMs: number;
+    regularizedEndMs: number;
+    reason: string;
+  }): Promise<{ success: boolean; error?: string }> {
+    if (params.regularizedEndMs <= params.regularizedStartMs) {
+      return { success: false, error: 'End time must be strictly after start time.' };
+    }
+    if (!params.reason.trim()) {
+      return { success: false, error: 'Reason for regularization is required.' };
+    }
+
+    const regularizedDurationMs = params.regularizedEndMs - params.regularizedStartMs;
+    const regId = 'reg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+    const now = Date.now();
+
+    let originalSession: TimerSession | null = null;
+    if (params.sessionId) {
+      const allSessions = await this.getAllSessions();
+      originalSession = allSessions.find((s) => s.id === params.sessionId) || null;
+    }
+
+    const regRecord: TimerRegularization = {
+      id: regId,
+      sessionId: params.sessionId,
+      timerId: params.timerId,
+      timerName: params.timerName,
+      originalDateStr: originalSession?.dateStr,
+      originalStartMs: originalSession?.startMs,
+      originalEndMs: originalSession?.endMs,
+      originalDurationMs: originalSession?.durationMs,
+      regularizedDateStr: params.regularizedDateStr,
+      regularizedStartMs: params.regularizedStartMs,
+      regularizedEndMs: params.regularizedEndMs,
+      regularizedDurationMs,
+      reason: params.reason.trim(),
+      createdAtMs: now,
     };
 
     if (this.isNative && this.db) {
-      await this.db.run(
-        `INSERT INTO expenses 
-         (id, date_str, time_str, timestamp_ms, amount, reason, category) 
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          fullExpense.id,
-          fullExpense.dateStr,
-          fullExpense.timeStr,
-          fullExpense.timestampMs,
-          fullExpense.amount,
-          fullExpense.reason,
-          fullExpense.category ?? 'General',
-        ]
-      );
+      try {
+        await this.db.execute('BEGIN TRANSACTION;');
+
+        // Save audit trail
+        await this.db.run(
+          `INSERT INTO timer_regularizations 
+           (id, session_id, timer_id, timer_name, original_date_str, original_start_ms, original_end_ms, original_duration_ms, regularized_date_str, regularized_start_ms, regularized_end_ms, regularized_duration_ms, reason, created_at_ms) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            regRecord.id,
+            regRecord.sessionId ?? null,
+            regRecord.timerId,
+            regRecord.timerName,
+            regRecord.originalDateStr ?? null,
+            regRecord.originalStartMs ?? null,
+            regRecord.originalEndMs ?? null,
+            regRecord.originalDurationMs ?? null,
+            regRecord.regularizedDateStr,
+            regRecord.regularizedStartMs,
+            regRecord.regularizedEndMs,
+            regRecord.regularizedDurationMs,
+            regRecord.reason,
+            regRecord.createdAtMs,
+          ]
+        );
+
+        if (params.sessionId) {
+          // Update existing session
+          await this.db.run(
+            `UPDATE timer_sessions 
+             SET date_str = ?, start_ms = ?, end_ms = ?, duration_ms = ?, is_regularized = 1, regularization_reason = ? 
+             WHERE id = ?`,
+            [
+              params.regularizedDateStr,
+              params.regularizedStartMs,
+              params.regularizedEndMs,
+              regularizedDurationMs,
+              params.reason.trim(),
+              params.sessionId,
+            ]
+          );
+        } else {
+          // Insert new regularized session
+          const newSessionId = 'ses_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+          await this.db.run(
+            `INSERT INTO timer_sessions 
+             (id, timer_id, timer_name, date_str, start_ms, end_ms, duration_ms, is_regularized, regularization_reason) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+            [
+              newSessionId,
+              params.timerId,
+              params.timerName,
+              params.regularizedDateStr,
+              params.regularizedStartMs,
+              params.regularizedEndMs,
+              regularizedDurationMs,
+              params.reason.trim(),
+            ]
+          );
+        }
+
+        // Add audit trail event to activity log
+        const eventId = 'evt_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+        await this.db.run(
+          `INSERT INTO timer_events 
+           (id, timer_id, timer_name, event_type, timestamp_ms, date_str, time_str, duration_ms, note) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            eventId,
+            params.timerId,
+            params.timerName,
+            'REGULARIZE',
+            now,
+            params.regularizedDateStr,
+            formatTime(params.regularizedStartMs),
+            regularizedDurationMs,
+            `Regularized: ${params.reason.trim()} (${formatDuration(regularizedDurationMs, true)})`,
+          ]
+        );
+
+        await this.db.execute('COMMIT;');
+      } catch (err) {
+        await this.db.execute('ROLLBACK;');
+        console.error('Failed to regularize session:', err);
+        return { success: false, error: (err as Error).message };
+      }
     } else {
+      // Web fallback
+      const regList = await this.getAllRegularizations();
+      regList.push(regRecord);
+      localStorage.setItem(this.webStorageKeyPrefix + 'timer_regularizations', JSON.stringify(regList));
+
+      const sessions = await this.getAllSessions();
+      if (params.sessionId) {
+        const idx = sessions.findIndex((s) => s.id === params.sessionId);
+        if (idx !== -1) {
+          sessions[idx] = {
+            ...sessions[idx],
+            dateStr: params.regularizedDateStr,
+            startMs: params.regularizedStartMs,
+            endMs: params.regularizedEndMs,
+            durationMs: regularizedDurationMs,
+            isRegularized: true,
+            regularizationReason: params.reason.trim(),
+          };
+        }
+      } else {
+        sessions.push({
+          id: 'ses_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+          timerId: params.timerId,
+          timerName: params.timerName,
+          dateStr: params.regularizedDateStr,
+          startMs: params.regularizedStartMs,
+          endMs: params.regularizedEndMs,
+          durationMs: regularizedDurationMs,
+          isRegularized: true,
+          regularizationReason: params.reason.trim(),
+        });
+      }
+      localStorage.setItem(this.webStorageKeyPrefix + 'timer_sessions', JSON.stringify(sessions));
+
+      await this.logTimerEvent({
+        timerId: params.timerId,
+        timerName: params.timerName,
+        eventType: 'REGULARIZE',
+        timestampMs: now,
+        dateStr: params.regularizedDateStr,
+        timeStr: formatTime(params.regularizedStartMs),
+        durationMs: regularizedDurationMs,
+        note: `Regularized: ${params.reason.trim()} (${formatDuration(regularizedDurationMs, true)})`,
+      });
+    }
+
+    return { success: true };
+  }
+
+  public async getAllRegularizations(): Promise<TimerRegularization[]> {
+    if (this.isNative && this.db) {
+      const res = await this.db.query(
+        'SELECT * FROM timer_regularizations ORDER BY created_at_ms DESC'
+      );
+      if (res.values) {
+        return res.values.map((r) => ({
+          id: r.id,
+          sessionId: r.session_id,
+          timerId: r.timer_id as TimerId,
+          timerName: r.timer_name,
+          originalDateStr: r.original_date_str,
+          originalStartMs: r.original_start_ms !== null ? Number(r.original_start_ms) : undefined,
+          originalEndMs: r.original_end_ms !== null ? Number(r.original_end_ms) : undefined,
+          originalDurationMs: r.original_duration_ms !== null ? Number(r.original_duration_ms) : undefined,
+          regularizedDateStr: r.regularized_date_str,
+          regularizedStartMs: Number(r.regularized_start_ms),
+          regularizedEndMs: Number(r.regularized_end_ms),
+          regularizedDurationMs: Number(r.regularized_duration_ms),
+          reason: r.reason,
+          createdAtMs: Number(r.created_at_ms),
+        }));
+      }
+      return [];
+    } else {
+      const data = localStorage.getItem(this.webStorageKeyPrefix + 'timer_regularizations');
+      return data ? JSON.parse(data) : [];
+    }
+  }
+
+  public async getRegularizationsForDate(dateStr: string): Promise<TimerRegularization[]> {
+    const all = await this.getAllRegularizations();
+    return all.filter((r) => r.regularizedDateStr === dateStr);
+  }
+
+  // --- ACCOUNT BALANCES & TRANSACTIONS ---
+
+  public async getAccountBalances(): Promise<AccountBalances> {
+    if (this.isNative && this.db) {
+      const res = await this.db.query('SELECT id, balance FROM account_balances');
+      let upi = 0;
+      let wallet = 0;
+      if (res.values) {
+        for (const row of res.values) {
+          if (row.id === 'upi') upi = Number(row.balance);
+          if (row.id === 'wallet') wallet = Number(row.balance);
+        }
+      }
+      return { upi, wallet };
+    } else {
+      const data = localStorage.getItem(this.webStorageKeyPrefix + 'account_balances');
+      return data ? JSON.parse(data) : { upi: 0, wallet: 0 };
+    }
+  }
+
+  public async addAccountBalance(
+    accountType: PaymentMethod,
+    amount: number,
+    note?: string
+  ): Promise<{ success: boolean; balances?: AccountBalances; error?: string }> {
+    if (isNaN(amount) || amount <= 0) {
+      return { success: false, error: 'Amount must be greater than zero.' };
+    }
+
+    const accId = accountType.toLowerCase();
+    const now = Date.now();
+    const dateStr = formatDate(now);
+    const timeStr = formatTime(now);
+    const txId = 'tx_' + now + '_' + Math.random().toString(36).substr(2, 6);
+
+    if (this.isNative && this.db) {
+      try {
+        await this.db.execute('BEGIN TRANSACTION;');
+
+        await this.db.run(
+          `UPDATE account_balances 
+           SET balance = balance + ?, last_updated_ms = ? 
+           WHERE id = ?`,
+          [amount, now, accId]
+        );
+
+        await this.db.run(
+          `INSERT INTO balance_transactions 
+           (id, account_type, transaction_type, amount, date_str, time_str, timestamp_ms, reference_id, note) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+          [txId, accountType, 'CREDIT', amount, dateStr, timeStr, now, note?.trim() || 'Manual Balance Addition']
+        );
+
+        await this.db.execute('COMMIT;');
+        const balances = await this.getAccountBalances();
+        return { success: true, balances };
+      } catch (err) {
+        await this.db.execute('ROLLBACK;');
+        console.error('Failed to add balance:', err);
+        return { success: false, error: (err as Error).message };
+      }
+    } else {
+      const balances = await this.getAccountBalances();
+      if (accountType === 'UPI') balances.upi += amount;
+      else balances.wallet += amount;
+
+      localStorage.setItem(this.webStorageKeyPrefix + 'account_balances', JSON.stringify(balances));
+
+      const txList = await this.getAllBalanceTransactions();
+      txList.push({
+        id: txId,
+        accountType,
+        transactionType: 'CREDIT',
+        amount,
+        dateStr,
+        timeStr,
+        timestampMs: now,
+        note: note?.trim() || 'Manual Balance Addition',
+      });
+      localStorage.setItem(this.webStorageKeyPrefix + 'balance_transactions', JSON.stringify(txList));
+
+      return { success: true, balances };
+    }
+  }
+
+  public async getAllBalanceTransactions(): Promise<BalanceTransaction[]> {
+    if (this.isNative && this.db) {
+      const res = await this.db.query(
+        'SELECT * FROM balance_transactions ORDER BY timestamp_ms DESC'
+      );
+      if (res.values) {
+        return res.values.map((r) => ({
+          id: r.id,
+          accountType: r.account_type as PaymentMethod,
+          transactionType: r.transaction_type as 'CREDIT' | 'DEBIT' | 'REVERSAL',
+          amount: Number(r.amount),
+          dateStr: r.date_str,
+          timeStr: r.time_str,
+          timestampMs: Number(r.timestamp_ms),
+          referenceId: r.reference_id,
+          note: r.note,
+        }));
+      }
+      return [];
+    } else {
+      const data = localStorage.getItem(this.webStorageKeyPrefix + 'balance_transactions');
+      return data ? JSON.parse(data) : [];
+    }
+  }
+
+  // --- EXPENSES WITH ATOMIC BALANCE INTEGRATION ---
+
+  public async saveExpense(
+    expense: Omit<Expense, 'id'>
+  ): Promise<{ success: boolean; expense?: Expense; error?: string }> {
+    const balances = await this.getAccountBalances();
+    const method = expense.paymentMethod || 'UPI';
+    const accId = method.toLowerCase();
+    const available = method === 'UPI' ? balances.upi : balances.wallet;
+
+    if (expense.amount > available) {
+      return {
+        success: false,
+        error: `Insufficient ${method} balance. (Available: ₹${available.toLocaleString('en-IN')}, Required: ₹${expense.amount.toLocaleString('en-IN')})`,
+      };
+    }
+
+    const fullExpense: Expense = {
+      ...expense,
+      id: 'exp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+      paymentMethod: method,
+    };
+    const now = fullExpense.timestampMs;
+    const txId = 'tx_' + now + '_' + Math.random().toString(36).substr(2, 6);
+
+    if (this.isNative && this.db) {
+      try {
+        await this.db.execute('BEGIN TRANSACTION;');
+
+        // 1. Deduct balance
+        await this.db.run(
+          `UPDATE account_balances 
+           SET balance = balance - ?, last_updated_ms = ? 
+           WHERE id = ?`,
+          [fullExpense.amount, now, accId]
+        );
+
+        // 2. Record balance transaction
+        await this.db.run(
+          `INSERT INTO balance_transactions 
+           (id, account_type, transaction_type, amount, date_str, time_str, timestamp_ms, reference_id, note) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            txId,
+            method,
+            'DEBIT',
+            fullExpense.amount,
+            fullExpense.dateStr,
+            fullExpense.timeStr,
+            now,
+            fullExpense.id,
+            `Expense: ${fullExpense.reason}`,
+          ]
+        );
+
+        // 3. Save expense
+        await this.db.run(
+          `INSERT INTO expenses 
+           (id, date_str, time_str, timestamp_ms, amount, reason, category, payment_method) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            fullExpense.id,
+            fullExpense.dateStr,
+            fullExpense.timeStr,
+            fullExpense.timestampMs,
+            fullExpense.amount,
+            fullExpense.reason,
+            fullExpense.category ?? 'General',
+            method,
+          ]
+        );
+
+        await this.db.execute('COMMIT;');
+        return { success: true, expense: fullExpense };
+      } catch (err) {
+        await this.db.execute('ROLLBACK;');
+        console.error('Failed to save expense with balance deduction:', err);
+        return { success: false, error: (err as Error).message };
+      }
+    } else {
+      // Web fallback
+      if (method === 'UPI') balances.upi -= fullExpense.amount;
+      else balances.wallet -= fullExpense.amount;
+      localStorage.setItem(this.webStorageKeyPrefix + 'account_balances', JSON.stringify(balances));
+
+      const txList = await this.getAllBalanceTransactions();
+      txList.push({
+        id: txId,
+        accountType: method,
+        transactionType: 'DEBIT',
+        amount: fullExpense.amount,
+        dateStr: fullExpense.dateStr,
+        timeStr: fullExpense.timeStr,
+        timestampMs: now,
+        referenceId: fullExpense.id,
+        note: `Expense: ${fullExpense.reason}`,
+      });
+      localStorage.setItem(this.webStorageKeyPrefix + 'balance_transactions', JSON.stringify(txList));
+
       const expenses = await this.getAllExpenses();
       expenses.push(fullExpense);
-      localStorage.setItem(
-        this.webStorageKeyPrefix + 'expenses',
-        JSON.stringify(expenses)
-      );
-    }
+      localStorage.setItem(this.webStorageKeyPrefix + 'expenses', JSON.stringify(expenses));
 
-    return fullExpense;
+      return { success: true, expense: fullExpense };
+    }
   }
 
-  public async updateExpense(expense: Expense): Promise<void> {
-    if (this.isNative && this.db) {
-      await this.db.run(
-        `UPDATE expenses 
-         SET date_str = ?, time_str = ?, timestamp_ms = ?, amount = ?, reason = ?, category = ? 
-         WHERE id = ?`,
-        [
-          expense.dateStr,
-          expense.timeStr,
-          expense.timestampMs,
-          expense.amount,
-          expense.reason,
-          expense.category ?? 'General',
-          expense.id,
-        ]
-      );
+  public async updateExpense(
+    updatedExpense: Expense
+  ): Promise<{ success: boolean; error?: string }> {
+    const allExpenses = await this.getAllExpenses();
+    const existing = allExpenses.find((e) => e.id === updatedExpense.id);
+    if (!existing) {
+      return { success: false, error: 'Expense record not found.' };
+    }
+
+    const currentBalances = await this.getAccountBalances();
+    const oldMethod = existing.paymentMethod || 'UPI';
+    const newMethod = updatedExpense.paymentMethod || 'UPI';
+    const now = Date.now();
+
+    // Check balance validity
+    if (oldMethod === newMethod) {
+      const netDeduction = updatedExpense.amount - existing.amount;
+      const currentAvailable = oldMethod === 'UPI' ? currentBalances.upi : currentBalances.wallet;
+      if (netDeduction > currentAvailable) {
+        return {
+          success: false,
+          error: `Insufficient ${newMethod} balance for increased amount. (Available: ₹${currentAvailable.toLocaleString('en-IN')}, Extra needed: ₹${netDeduction.toLocaleString('en-IN')})`,
+        };
+      }
     } else {
-      const expenses = await this.getAllExpenses();
-      const idx = expenses.findIndex((e) => e.id === expense.id);
-      if (idx !== -1) {
-        expenses[idx] = expense;
-        localStorage.setItem(
-          this.webStorageKeyPrefix + 'expenses',
-          JSON.stringify(expenses)
-        );
+      // Different payment methods: old source gets refunded, new source gets full deduction
+      const newAvailable = newMethod === 'UPI' ? currentBalances.upi : currentBalances.wallet;
+      if (updatedExpense.amount > newAvailable) {
+        return {
+          success: false,
+          error: `Insufficient ${newMethod} balance. (Available: ₹${newAvailable.toLocaleString('en-IN')}, Required: ₹${updatedExpense.amount.toLocaleString('en-IN')})`,
+        };
       }
     }
+
+    if (this.isNative && this.db) {
+      try {
+        await this.db.execute('BEGIN TRANSACTION;');
+
+        // 1. Refund old deduction
+        await this.db.run(
+          `UPDATE account_balances 
+           SET balance = balance + ?, last_updated_ms = ? 
+           WHERE id = ?`,
+          [existing.amount, now, oldMethod.toLowerCase()]
+        );
+
+        // 2. Deduct new amount
+        await this.db.run(
+          `UPDATE account_balances 
+           SET balance = balance - ?, last_updated_ms = ? 
+           WHERE id = ?`,
+          [updatedExpense.amount, now, newMethod.toLowerCase()]
+        );
+
+        // 3. Log balance transaction
+        const txId = 'tx_' + now + '_' + Math.random().toString(36).substr(2, 6);
+        await this.db.run(
+          `INSERT INTO balance_transactions 
+           (id, account_type, transaction_type, amount, date_str, time_str, timestamp_ms, reference_id, note) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            txId,
+            newMethod,
+            'DEBIT',
+            updatedExpense.amount,
+            updatedExpense.dateStr,
+            updatedExpense.timeStr,
+            now,
+            updatedExpense.id,
+            `Expense Update: ${updatedExpense.reason}`,
+          ]
+        );
+
+        // 4. Update expenses row
+        await this.db.run(
+          `UPDATE expenses 
+           SET date_str = ?, time_str = ?, timestamp_ms = ?, amount = ?, reason = ?, category = ?, payment_method = ? 
+           WHERE id = ?`,
+          [
+            updatedExpense.dateStr,
+            updatedExpense.timeStr,
+            updatedExpense.timestampMs,
+            updatedExpense.amount,
+            updatedExpense.reason,
+            updatedExpense.category ?? 'General',
+            newMethod,
+            updatedExpense.id,
+          ]
+        );
+
+        await this.db.execute('COMMIT;');
+        return { success: true };
+      } catch (err) {
+        await this.db.execute('ROLLBACK;');
+        console.error('Failed to update expense with balance adjustment:', err);
+        return { success: false, error: (err as Error).message };
+      }
+    } else {
+      // Web fallback
+      if (oldMethod === 'UPI') currentBalances.upi += existing.amount;
+      else currentBalances.wallet += existing.amount;
+
+      if (newMethod === 'UPI') currentBalances.upi -= updatedExpense.amount;
+      else currentBalances.wallet -= updatedExpense.amount;
+
+      localStorage.setItem(this.webStorageKeyPrefix + 'account_balances', JSON.stringify(currentBalances));
+
+      const txList = await this.getAllBalanceTransactions();
+      txList.push({
+        id: 'tx_' + now + '_' + Math.random().toString(36).substr(2, 6),
+        accountType: newMethod,
+        transactionType: 'DEBIT',
+        amount: updatedExpense.amount,
+        dateStr: updatedExpense.dateStr,
+        timeStr: updatedExpense.timeStr,
+        timestampMs: now,
+        referenceId: updatedExpense.id,
+        note: `Expense Update: ${updatedExpense.reason}`,
+      });
+      localStorage.setItem(this.webStorageKeyPrefix + 'balance_transactions', JSON.stringify(txList));
+
+      const idx = allExpenses.findIndex((e) => e.id === updatedExpense.id);
+      if (idx !== -1) {
+        allExpenses[idx] = updatedExpense;
+        localStorage.setItem(this.webStorageKeyPrefix + 'expenses', JSON.stringify(allExpenses));
+      }
+
+      return { success: true };
+    }
   }
 
-  public async deleteExpense(id: string): Promise<void> {
+  public async deleteExpense(id: string): Promise<{ success: boolean; error?: string }> {
+    const allExpenses = await this.getAllExpenses();
+    const existing = allExpenses.find((e) => e.id === id);
+    if (!existing) {
+      return { success: false, error: 'Expense not found.' };
+    }
+
+    const method = existing.paymentMethod || 'UPI';
+    const now = Date.now();
+    const txId = 'tx_' + now + '_' + Math.random().toString(36).substr(2, 6);
+
     if (this.isNative && this.db) {
-      await this.db.run('DELETE FROM expenses WHERE id = ?', [id]);
+      try {
+        await this.db.execute('BEGIN TRANSACTION;');
+
+        // 1. Refund balance
+        await this.db.run(
+          `UPDATE account_balances 
+           SET balance = balance + ?, last_updated_ms = ? 
+           WHERE id = ?`,
+          [existing.amount, now, method.toLowerCase()]
+        );
+
+        // 2. Log reversal transaction
+        await this.db.run(
+          `INSERT INTO balance_transactions 
+           (id, account_type, transaction_type, amount, date_str, time_str, timestamp_ms, reference_id, note) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            txId,
+            method,
+            'REVERSAL',
+            existing.amount,
+            formatDate(now),
+            formatTime(now),
+            now,
+            id,
+            `Refund on Deletion: ${existing.reason}`,
+          ]
+        );
+
+        // 3. Delete from expenses
+        await this.db.run('DELETE FROM expenses WHERE id = ?', [id]);
+
+        await this.db.execute('COMMIT;');
+        return { success: true };
+      } catch (err) {
+        await this.db.execute('ROLLBACK;');
+        console.error('Failed to delete expense and refund balance:', err);
+        return { success: false, error: (err as Error).message };
+      }
     } else {
-      const expenses = await this.getAllExpenses();
-      const filtered = expenses.filter((e) => e.id !== id);
-      localStorage.setItem(
-        this.webStorageKeyPrefix + 'expenses',
-        JSON.stringify(filtered)
-      );
+      // Web fallback
+      const balances = await this.getAccountBalances();
+      if (method === 'UPI') balances.upi += existing.amount;
+      else balances.wallet += existing.amount;
+      localStorage.setItem(this.webStorageKeyPrefix + 'account_balances', JSON.stringify(balances));
+
+      const txList = await this.getAllBalanceTransactions();
+      txList.push({
+        id: txId,
+        accountType: method,
+        transactionType: 'REVERSAL',
+        amount: existing.amount,
+        dateStr: formatDate(now),
+        timeStr: formatTime(now),
+        timestampMs: now,
+        referenceId: id,
+        note: `Refund on Deletion: ${existing.reason}`,
+      });
+      localStorage.setItem(this.webStorageKeyPrefix + 'balance_transactions', JSON.stringify(txList));
+
+      const filtered = allExpenses.filter((e) => e.id !== id);
+      localStorage.setItem(this.webStorageKeyPrefix + 'expenses', JSON.stringify(filtered));
+
+      return { success: true };
     }
   }
 
@@ -504,6 +1169,7 @@ class DatabaseService {
           amount: Number(r.amount),
           reason: r.reason,
           category: r.category,
+          paymentMethod: (r.payment_method as PaymentMethod) || 'UPI',
         }));
       }
       return [];
@@ -527,6 +1193,7 @@ class DatabaseService {
           amount: Number(r.amount),
           reason: r.reason,
           category: r.category,
+          paymentMethod: (r.payment_method as PaymentMethod) || 'UPI',
         }));
       }
       return [];
@@ -631,7 +1298,10 @@ class DatabaseService {
       timerActiveStates: await this.getAllTimerActiveStates(),
       timerEvents: await this.getAllEvents(),
       timerSessions: await this.getAllSessions(),
+      timerRegularizations: await this.getAllRegularizations(),
       expenses: await this.getAllExpenses(),
+      accountBalances: await this.getAccountBalances(),
+      balanceTransactions: await this.getAllBalanceTransactions(),
     };
     return JSON.stringify(backup, null, 2);
   }
@@ -658,9 +1328,19 @@ class DatabaseService {
           if (this.isNative && this.db) {
             await this.db.run(
               `INSERT OR REPLACE INTO timer_sessions 
-               (id, timer_id, timer_name, date_str, start_ms, end_ms, duration_ms) 
-               VALUES (?, ?, ?, ?, ?, ?, ?)`,
-              [s.id, s.timerId, s.timerName, s.dateStr, s.startMs, s.endMs, s.durationMs]
+               (id, timer_id, timer_name, date_str, start_ms, end_ms, duration_ms, is_regularized, regularization_reason) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                s.id,
+                s.timerId,
+                s.timerName,
+                s.dateStr,
+                s.startMs,
+                s.endMs,
+                s.durationMs,
+                s.isRegularized ? 1 : 0,
+                s.regularizationReason || null,
+              ]
             );
           } else {
             const sessions = await this.getAllSessions();
@@ -675,9 +1355,117 @@ class DatabaseService {
         }
       }
 
+      if (Array.isArray(data.timerRegularizations)) {
+        for (const reg of data.timerRegularizations) {
+          if (this.isNative && this.db) {
+            await this.db.run(
+              `INSERT OR REPLACE INTO timer_regularizations 
+               (id, session_id, timer_id, timer_name, original_date_str, original_start_ms, original_end_ms, original_duration_ms, regularized_date_str, regularized_start_ms, regularized_end_ms, regularized_duration_ms, reason, created_at_ms) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                reg.id,
+                reg.sessionId ?? null,
+                reg.timerId,
+                reg.timerName,
+                reg.originalDateStr ?? null,
+                reg.originalStartMs ?? null,
+                reg.originalEndMs ?? null,
+                reg.originalDurationMs ?? null,
+                reg.regularizedDateStr,
+                reg.regularizedStartMs,
+                reg.regularizedEndMs,
+                reg.regularizedDurationMs,
+                reg.reason,
+                reg.createdAtMs,
+              ]
+            );
+          }
+        }
+        if (!this.isNative) {
+          localStorage.setItem(
+            this.webStorageKeyPrefix + 'timer_regularizations',
+            JSON.stringify(data.timerRegularizations)
+          );
+        }
+      }
+
       if (Array.isArray(data.expenses)) {
         for (const exp of data.expenses) {
-          await this.saveExpense(exp);
+          if (this.isNative && this.db) {
+            await this.db.run(
+              `INSERT OR REPLACE INTO expenses 
+               (id, date_str, time_str, timestamp_ms, amount, reason, category, payment_method) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                exp.id,
+                exp.dateStr,
+                exp.timeStr,
+                exp.timestampMs,
+                exp.amount,
+                exp.reason,
+                exp.category ?? 'General',
+                exp.paymentMethod || 'UPI',
+              ]
+            );
+          } else {
+            const expenses = await this.getAllExpenses();
+            if (!expenses.some((ex) => ex.id === exp.id)) {
+              expenses.push(exp);
+              localStorage.setItem(
+                this.webStorageKeyPrefix + 'expenses',
+                JSON.stringify(expenses)
+              );
+            }
+          }
+        }
+      }
+
+      if (data.accountBalances && typeof data.accountBalances === 'object') {
+        const upi = Number(data.accountBalances.upi || 0);
+        const wallet = Number(data.accountBalances.wallet || 0);
+        const now = Date.now();
+        if (this.isNative && this.db) {
+          await this.db.run(
+            'INSERT OR REPLACE INTO account_balances (id, balance, last_updated_ms) VALUES (?, ?, ?)',
+            ['upi', upi, now]
+          );
+          await this.db.run(
+            'INSERT OR REPLACE INTO account_balances (id, balance, last_updated_ms) VALUES (?, ?, ?)',
+            ['wallet', wallet, now]
+          );
+        } else {
+          localStorage.setItem(
+            this.webStorageKeyPrefix + 'account_balances',
+            JSON.stringify({ upi, wallet })
+          );
+        }
+      }
+
+      if (Array.isArray(data.balanceTransactions)) {
+        if (this.isNative && this.db) {
+          for (const tx of data.balanceTransactions) {
+            await this.db.run(
+              `INSERT OR REPLACE INTO balance_transactions 
+               (id, account_type, transaction_type, amount, date_str, time_str, timestamp_ms, reference_id, note) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                tx.id,
+                tx.accountType,
+                tx.transactionType,
+                tx.amount,
+                tx.dateStr,
+                tx.timeStr,
+                tx.timestampMs,
+                tx.referenceId ?? null,
+                tx.note ?? null,
+              ]
+            );
+          }
+        } else {
+          localStorage.setItem(
+            this.webStorageKeyPrefix + 'balance_transactions',
+            JSON.stringify(data.balanceTransactions)
+          );
         }
       }
 
@@ -761,15 +1549,22 @@ class DatabaseService {
 
   // Completely wipe all database tables to erase everything
   public async clearAllData(): Promise<void> {
+    const now = Date.now();
     if (this.isNative && this.db) {
       try {
         await this.db.run('DELETE FROM expenses');
         await this.db.run('DELETE FROM timer_events');
         await this.db.run('DELETE FROM timer_sessions');
+        await this.db.run('DELETE FROM timer_regularizations');
+        await this.db.run('DELETE FROM balance_transactions');
         await this.db.run(`
           UPDATE timer_active_state
           SET status = 'IDLE', session_start_ms = NULL, accumulated_ms = 0, last_updated_ms = ?
-        `, [Date.now()]);
+        `, [now]);
+        await this.db.run(
+          'UPDATE account_balances SET balance = 0, last_updated_ms = ?',
+          [now]
+        );
       } catch (err) {
         console.error('Failed to clear all data in SQLite:', err);
       }
@@ -779,6 +1574,10 @@ class DatabaseService {
       localStorage.removeItem(this.webStorageKeyPrefix + 'expenses');
       localStorage.removeItem(this.webStorageKeyPrefix + 'timer_events');
       localStorage.removeItem(this.webStorageKeyPrefix + 'timer_sessions');
+      localStorage.removeItem(this.webStorageKeyPrefix + 'timer_regularizations');
+      localStorage.removeItem(this.webStorageKeyPrefix + 'balance_transactions');
+      localStorage.setItem(this.webStorageKeyPrefix + 'account_balances', JSON.stringify({ upi: 0, wallet: 0 }));
+
       for (const timerId of ['day_analysis', 'bus_waiting', 'bus_travel'] as TimerId[]) {
         localStorage.setItem(
           this.webStorageKeyPrefix + 'active_state_' + timerId,
@@ -787,7 +1586,7 @@ class DatabaseService {
             status: 'IDLE',
             sessionStartTimeMs: null,
             accumulatedDurationMs: 0,
-            lastUpdatedMs: Date.now(),
+            lastUpdatedMs: now,
           })
         );
       }

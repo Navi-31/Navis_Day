@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { Expense } from '../types';
-import { formatDate, formatDuration } from '../utils/time';
+import { Expense, TimerId, PaymentMethod } from '../types';
+import { formatDate, formatTime, formatDuration, parseDateStr } from '../utils/time';
 import { generateAndExportExcel } from '../services/excelExport';
 import {
   FileDown,
@@ -17,7 +17,10 @@ import {
   Edit2,
   Trash2,
   CheckCircle2,
-  Sparkles
+  Sparkles,
+  RotateCcw,
+  History,
+  X,
 } from 'lucide-react';
 
 export const HistoryAndExport: React.FC = () => {
@@ -27,8 +30,11 @@ export const HistoryAndExport: React.FC = () => {
     selectedDateSummary,
     selectedDateEvents,
     selectedDateExpenses,
+    allRegularizations,
+    accountBalances,
     editExpense,
     removeExpense,
+    regularizeSession,
   } = useApp();
 
   const [activeFilter, setActiveFilter] = useState<'all' | 'timers' | 'expenses'>('all');
@@ -39,6 +45,23 @@ export const HistoryAndExport: React.FC = () => {
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [editAmount, setEditAmount] = useState<string>('');
   const [editReason, setEditReason] = useState<string>('');
+  const [editCategory, setEditCategory] = useState<string>('General');
+  const [editPaymentMethod, setEditPaymentMethod] = useState<PaymentMethod>('UPI');
+  const [editError, setEditError] = useState<string | null>(null);
+  const [isSavingEdit, setIsSavingEdit] = useState<boolean>(false);
+
+  // Regularize modal state
+  const [isRegularizeModalOpen, setIsRegularizeModalOpen] = useState(false);
+  const [regularizeTimerId, setRegularizeTimerId] = useState<TimerId>('day_analysis');
+  const [regularizeDate, setRegularizeDate] = useState<string>(selectedDate);
+  const [regularizeStartTime, setRegularizeStartTime] = useState<string>('09:00');
+  const [regularizeEndTime, setRegularizeEndTime] = useState<string>('17:00');
+  const [regularizeReason, setRegularizeReason] = useState<string>('');
+  const [regularizeError, setRegularizeError] = useState<string | null>(null);
+  const [isSubmittingRegularize, setIsSubmittingRegularize] = useState(false);
+
+  // Audit Trail modal
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
 
   // Date selection helper: generate last 7 days chips
   const [dateChips, setDateChips] = useState<Array<{ label: string; day: number; month: string; dateStr: string }>>([]);
@@ -81,26 +104,145 @@ export const HistoryAndExport: React.FC = () => {
     setEditingExpense(exp);
     setEditAmount(String(exp.amount));
     setEditReason(exp.reason);
+    setEditCategory(exp.category || 'General');
+    setEditPaymentMethod(exp.paymentMethod || 'UPI');
+    setEditError(null);
   };
 
   const handleSaveEdit = async () => {
-    if (editingExpense) {
-      const parsedAmount = parseFloat(editAmount);
-      if (!isNaN(parsedAmount) && parsedAmount > 0) {
-        await editExpense({
-          ...editingExpense,
-          amount: parsedAmount,
-          reason: editReason.trim() || 'General Expense',
-        });
-        setEditingExpense(null);
+    if (!editingExpense || isSavingEdit) return;
+    const parsedAmount = parseFloat(editAmount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      setEditError('Please enter a valid amount.');
+      return;
+    }
+    if (!editReason.trim()) {
+      setEditError('Please enter a reason/description.');
+      return;
+    }
+
+    // Validate balance
+    const oldMethod = editingExpense.paymentMethod || 'UPI';
+    const newMethod = editPaymentMethod;
+    if (oldMethod === newMethod) {
+      const net = parsedAmount - editingExpense.amount;
+      const avail = newMethod === 'UPI' ? accountBalances.upi : accountBalances.wallet;
+      if (net > avail) {
+        setEditError(`Insufficient ${newMethod} balance. (Short by ₹${(net - avail).toLocaleString('en-IN')})`);
+        return;
       }
+    } else {
+      const avail = newMethod === 'UPI' ? accountBalances.upi : accountBalances.wallet;
+      if (parsedAmount > avail) {
+        setEditError(`Insufficient ${newMethod} balance. (Available: ₹${avail.toLocaleString('en-IN')})`);
+        return;
+      }
+    }
+
+    setIsSavingEdit(true);
+    setEditError(null);
+
+    const res = await editExpense({
+      ...editingExpense,
+      amount: parsedAmount,
+      reason: editReason.trim(),
+      category: editCategory,
+      paymentMethod: editPaymentMethod,
+    });
+    setIsSavingEdit(false);
+
+    if (res.success) {
+      setEditingExpense(null);
+    } else {
+      setEditError(res.error || 'Failed to update expense');
     }
   };
 
   const handleDeleteExpense = async (id: string) => {
-    if (confirm('Delete this expense transaction?')) {
-      await removeExpense(id);
+    if (confirm('Delete this expense transaction? The amount will be refunded to your balance.')) {
+      const res = await removeExpense(id);
+      if (!res.success) {
+        alert(res.error || 'Failed to delete expense');
+      }
     }
+  };
+
+  const handleOpenRegularize = () => {
+    setRegularizeDate(selectedDate);
+    setRegularizeTimerId('day_analysis');
+    setRegularizeStartTime('09:00');
+    setRegularizeEndTime('17:00');
+    setRegularizeReason('');
+    setRegularizeError(null);
+    setIsRegularizeModalOpen(true);
+  };
+
+  const handleSaveRegularize = async () => {
+    if (isSubmittingRegularize) return;
+    if (!regularizeReason.trim()) {
+      setRegularizeError('Reason for regularization is mandatory.');
+      return;
+    }
+
+    // Convert regularizeDate + times to ms
+    const [startH, startM] = regularizeStartTime.split(':').map(Number);
+    const [endH, endM] = regularizeEndTime.split(':').map(Number);
+
+    const dateObj = parseDateStr(regularizeDate);
+    const startObj = new Date(dateObj);
+    startObj.setHours(startH, startM, 0, 0);
+
+    const endObj = new Date(dateObj);
+    endObj.setHours(endH, endM, 0, 0);
+
+    const startMs = startObj.getTime();
+    let endMs = endObj.getTime();
+
+    if (endMs <= startMs) {
+      setRegularizeError('End time must be strictly after start time.');
+      return;
+    }
+
+    setIsSubmittingRegularize(true);
+    setRegularizeError(null);
+
+    const timerName =
+      regularizeTimerId === 'day_analysis'
+        ? 'Day Analysis'
+        : regularizeTimerId === 'bus_waiting'
+        ? 'Bus Waiting'
+        : 'Bus Travel';
+
+    const res = await regularizeSession({
+      timerId: regularizeTimerId,
+      timerName,
+      regularizedDateStr: regularizeDate,
+      regularizedStartMs: startMs,
+      regularizedEndMs: endMs,
+      reason: regularizeReason.trim(),
+    });
+
+    setIsSubmittingRegularize(false);
+
+    if (res.success) {
+      setIsRegularizeModalOpen(false);
+      setExportNotice('Timer record regularized successfully.');
+      setTimeout(() => setExportNotice(null), 4000);
+    } else {
+      setRegularizeError(res.error || 'Failed to regularize timer record.');
+    }
+  };
+
+  // Helper to compute duration for regularize modal
+  const computePreviewDuration = () => {
+    const [sH, sM] = regularizeStartTime.split(':').map(Number);
+    const [eH, eM] = regularizeEndTime.split(':').map(Number);
+    if (isNaN(sH) || isNaN(sM) || isNaN(eH) || isNaN(eM)) return '00:00:00';
+    const totalStartM = sH * 60 + sM;
+    const totalEndM = eH * 60 + eM;
+    if (totalEndM <= totalStartM) return 'Invalid (End <= Start)';
+    const diffMs = (totalEndM - totalStartM) * 60 * 1000;
+    return formatDuration(diffMs);
   };
 
   // Combine timer events and expenses into a unified timeline
@@ -113,18 +255,24 @@ export const HistoryAndExport: React.FC = () => {
     badge: string;
     subtitle: string;
     amount?: number;
+    paymentMethod?: PaymentMethod;
     expenseObj?: Expense;
-    icon: 'play' | 'pause' | 'stop' | 'receipt' | 'bus';
+    isRegularized?: boolean;
+    regularizationReason?: string;
+    icon: 'play' | 'pause' | 'stop' | 'receipt' | 'bus' | 'regularize';
   }
 
   const timelineItems: TimelineItem[] = [];
 
   if (activeFilter === 'all' || activeFilter === 'timers') {
     selectedDateEvents.forEach((ev) => {
-      let iconType: 'play' | 'pause' | 'stop' | 'bus' = 'play';
+      let iconType: 'play' | 'pause' | 'stop' | 'bus' | 'regularize' = 'play';
       if (ev.eventType === 'PAUSE') iconType = 'pause';
       else if (ev.eventType === 'STOP') iconType = 'stop';
+      else if (ev.eventType === 'REGULARIZE') iconType = 'regularize';
       else if (ev.timerId === 'bus_travel') iconType = 'bus';
+
+      const isReg = ev.eventType === 'REGULARIZE';
 
       timelineItems.push({
         id: ev.id,
@@ -134,6 +282,7 @@ export const HistoryAndExport: React.FC = () => {
         title: ev.timerName,
         badge: ev.eventType,
         subtitle: ev.note || (ev.durationMs ? `Duration: ${formatDuration(ev.durationMs, true)}` : 'Event Logged'),
+        isRegularized: isReg,
         icon: iconType,
       });
     });
@@ -148,15 +297,16 @@ export const HistoryAndExport: React.FC = () => {
         timeStr: exp.timeStr,
         title: exp.reason,
         badge: exp.category || 'EXPENSE',
-        subtitle: `${exp.category || 'Expense'} · ${exp.timeStr}`,
+        subtitle: `${exp.category || 'Expense'} · ${exp.timeStr} via ${exp.paymentMethod || 'UPI'}`,
         amount: exp.amount,
+        paymentMethod: exp.paymentMethod || 'UPI',
         expenseObj: exp,
         icon: 'receipt',
       });
     });
   }
 
-  // Sort descending or ascending by time
+  // Sort chronological
   timelineItems.sort((a, b) => a.timestampMs - b.timestampMs);
 
   return (
@@ -172,24 +322,27 @@ export const HistoryAndExport: React.FC = () => {
               DAILY HISTORY &amp; VAULT
             </span>
           </div>
-          {/* Custom Date Picker */}
-          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#1A1A1A] border border-[#333]">
-            <Calendar size={12} className="text-[#D4AF37]" />
-            <input
-              type="date"
-              value={(() => {
-                const parts = selectedDate.split('-');
-                if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`;
-                return '';
-              })()}
-              onChange={(e) => {
-                if (e.target.value) {
-                  const [y, m, d] = e.target.value.split('-');
-                  setSelectedDate(`${d}-${m}-${y}`);
-                }
-              }}
-              className="bg-transparent text-[11px] font-mono text-gray-300 outline-none cursor-pointer"
-            />
+
+          <div className="flex items-center gap-1.5">
+            {/* Custom Date Picker */}
+            <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#1A1A1A] border border-[#333]">
+              <Calendar size={12} className="text-[#D4AF37]" />
+              <input
+                type="date"
+                value={(() => {
+                  const parts = selectedDate.split('-');
+                  if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`;
+                  return '';
+                })()}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    const [y, m, d] = e.target.value.split('-');
+                    setSelectedDate(`${d}-${m}-${y}`);
+                  }
+                }}
+                className="bg-transparent text-[11px] font-mono text-gray-300 outline-none cursor-pointer"
+              />
+            </div>
           </div>
         </div>
 
@@ -221,8 +374,27 @@ export const HistoryAndExport: React.FC = () => {
         </div>
       </div>
 
+      {/* Action Bar: REGULARIZE & AUDIT TRAIL (Requirement 1) */}
+      <div className="flex items-center gap-2 my-2.5">
+        <button
+          onClick={handleOpenRegularize}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-gradient-to-r from-[#1c1a10] to-[#252010] border border-[#D4AF37]/60 text-[#D4AF37] font-mono text-xs font-bold hover:bg-[#2e2715] active:scale-95 transition-all shadow-[0_0_12px_rgba(212,175,55,0.15)]"
+        >
+          <RotateCcw size={13} className="text-[#D4AF37]" />
+          <span>REGULARIZE TIMER</span>
+        </button>
+
+        <button
+          onClick={() => setIsAuditModalOpen(true)}
+          className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-[#141414] border border-[#333] text-gray-300 font-mono text-xs font-semibold hover:border-gray-500 active:scale-95 transition-all"
+        >
+          <History size={13} className="text-[#A78BFA]" />
+          <span>AUDIT ({allRegularizations.length})</span>
+        </button>
+      </div>
+
       {/* Luxury Circular Mini-Metric Telemetry Rings */}
-      <div className="my-3">
+      <div className="my-1.5">
         <div className="bg-[#121212] rounded-2xl p-4 border border-[#262626] shadow-[0_4px_24px_rgba(0,0,0,0.8)] flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
@@ -292,7 +464,7 @@ export const HistoryAndExport: React.FC = () => {
         </div>
       </div>
 
-      {/* SECTION 2: THREE-WORKSHEET EXCEL EXPORT SECTION */}
+      {/* SECTION 2: EXCEL EXPORT SECTION */}
       <div className="my-2">
         <div className="bg-[#121212] rounded-2xl p-4 border border-[#D4AF37]/40 shadow-[0_8px_32px_rgba(212,175,55,0.12)] flex flex-col gap-3">
           <div className="flex items-center justify-between">
@@ -305,52 +477,13 @@ export const HistoryAndExport: React.FC = () => {
                   EXPORT TO EXCEL (.XLSX)
                 </span>
                 <span className="font-mono text-[10px] text-gray-400">
-                  Three-tier relational ledger dataset
+                  Relational dataset with payment methods &amp; balances
                 </span>
               </div>
             </div>
             <span className="px-2 py-0.5 rounded bg-[#1e1e1e] border border-[#333] text-[#D4AF37] font-mono text-[10px] font-semibold">
               XLSX
             </span>
-          </div>
-
-          {/* 3 Distinct Sheet Badges */}
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center gap-2.5 bg-[#0a0a0a] p-2 rounded-xl border border-[#202020]">
-              <span className="px-2 py-0.5 rounded bg-[#1c1c1c] text-[#D4AF37] font-mono text-[10px] font-bold border border-[#D4AF37]/30">
-                SHEET 1
-              </span>
-              <div className="flex flex-col min-w-0">
-                <span className="text-xs text-gray-200 font-semibold truncate">Daily Summary Table</span>
-                <span className="font-mono text-[9px] text-gray-400 truncate">
-                  Date · Day Analysis · Bus Travel · Waiting · Expense
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2.5 bg-[#0a0a0a] p-2 rounded-xl border border-[#202020]">
-              <span className="px-2 py-0.5 rounded bg-[#1c1c1c] text-[#A78BFA] font-mono text-[10px] font-bold border border-[#8B5CF6]/30">
-                SHEET 2
-              </span>
-              <div className="flex flex-col min-w-0">
-                <span className="text-xs text-gray-200 font-semibold truncate">Timer Activity Chrono-Log</span>
-                <span className="font-mono text-[9px] text-gray-400 truncate">
-                  Date · Time · Timer Name · Event (START/PAUSE/RESUME/STOP)
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2.5 bg-[#0a0a0a] p-2 rounded-xl border border-[#202020]">
-              <span className="px-2 py-0.5 rounded bg-[#1c1c1c] text-[#D4AF37] font-mono text-[10px] font-bold border border-[#D4AF37]/30">
-                SHEET 3
-              </span>
-              <div className="flex flex-col min-w-0">
-                <span className="text-xs text-gray-200 font-semibold truncate">Financial Expense Ledger</span>
-                <span className="font-mono text-[9px] text-gray-400 truncate">
-                  Date · Time · Amount (INR) · Detailed Reason
-                </span>
-              </div>
-            </div>
           </div>
 
           {/* Export Action Buttons */}
@@ -435,6 +568,8 @@ export const HistoryAndExport: React.FC = () => {
                     className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
                       item.type === 'expense'
                         ? 'bg-[#1a1528] text-[#A78BFA] border border-[#8B5CF6]/30'
+                        : item.badge === 'REGULARIZE'
+                        ? 'bg-[#2c1d38] text-[#D4AF37] border border-[#D4AF37]/50'
                         : item.badge === 'START' || item.badge === 'RESUME'
                         ? 'bg-[#1e1c12] text-[#D4AF37] border border-[#D4AF37]/30'
                         : item.badge === 'STOP'
@@ -444,6 +579,8 @@ export const HistoryAndExport: React.FC = () => {
                   >
                     {item.type === 'expense' ? (
                       <Receipt size={16} />
+                    ) : item.badge === 'REGULARIZE' ? (
+                      <RotateCcw size={15} className="text-[#D4AF37]" />
                     ) : item.badge === 'START' || item.badge === 'RESUME' ? (
                       <Play size={15} className="fill-current" />
                     ) : item.badge === 'PAUSE' ? (
@@ -460,7 +597,9 @@ export const HistoryAndExport: React.FC = () => {
                       </span>
                       <span
                         className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-bold ${
-                          item.badge === 'START' || item.badge === 'RESUME'
+                          item.badge === 'REGULARIZE'
+                            ? 'bg-gradient-to-r from-[#D4AF37]/30 to-[#8B5CF6]/30 text-[#D4AF37] border border-[#D4AF37]/40'
+                            : item.badge === 'START' || item.badge === 'RESUME'
                             ? 'bg-[#D4AF37]/20 text-[#D4AF37]'
                             : item.badge === 'STOP'
                             ? 'bg-red-950 text-red-400'
@@ -482,20 +621,27 @@ export const HistoryAndExport: React.FC = () => {
                 <div className="flex items-center gap-2 flex-shrink-0">
                   {item.type === 'expense' && item.amount !== undefined ? (
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-sm font-bold text-[#A78BFA]">
-                        ₹{item.amount.toLocaleString('en-IN')}
-                      </span>
+                      <div className="flex flex-col items-end">
+                        <span className="font-mono text-sm font-bold text-[#A78BFA]">
+                          ₹{item.amount.toLocaleString('en-IN')}
+                        </span>
+                        <span className="font-mono text-[9px] text-[#D4AF37]">
+                          {item.paymentMethod || 'UPI'}
+                        </span>
+                      </div>
                       {item.expenseObj && (
                         <div className="flex items-center gap-0.5">
                           <button
                             onClick={() => handleOpenEdit(item.expenseObj!)}
                             className="p-1 text-gray-400 hover:text-white transition-colors"
+                            aria-label="Edit Expense"
                           >
                             <Edit2 size={14} />
                           </button>
                           <button
                             onClick={() => handleDeleteExpense(item.expenseObj!.id)}
                             className="p-1 text-gray-400 hover:text-red-400 transition-colors"
+                            aria-label="Delete Expense"
                           >
                             <Trash2 size={14} />
                           </button>
@@ -514,32 +660,293 @@ export const HistoryAndExport: React.FC = () => {
         </div>
       </div>
 
-      {/* Edit Expense Modal */}
+      {/* Regularize Timer Modal (Requirement 1) */}
+      {isRegularizeModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 overflow-y-auto">
+          <div className="w-full max-w-sm rounded-2xl bg-[#141414] border border-[#D4AF37]/60 p-5 shadow-[0_0_35px_rgba(212,175,55,0.25)] flex flex-col gap-3.5 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-[#2A2A2A] pb-2.5">
+              <div className="flex items-center gap-1.5">
+                <RotateCcw size={16} className="text-[#D4AF37]" />
+                <span className="font-mono text-xs uppercase tracking-widest text-[#D4AF37] font-bold">
+                  REGULARIZE TIMER RECORD
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsRegularizeModalOpen(false)}
+                className="text-gray-400 hover:text-white"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {regularizeError && (
+              <div className="p-2.5 rounded-xl bg-red-950/60 border border-red-800 text-red-300 text-xs font-mono">
+                {regularizeError}
+              </div>
+            )}
+
+            {/* Timer Selection */}
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] font-mono text-gray-400 uppercase">Select Stopwatch</label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {[
+                  { id: 'day_analysis', name: 'Day Analysis' },
+                  { id: 'bus_waiting', name: 'Bus Waiting' },
+                  { id: 'bus_travel', name: 'Bus Travel' },
+                ].map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setRegularizeTimerId(t.id as TimerId)}
+                    className={`py-1.5 px-1 rounded-xl text-xs font-mono transition-all text-center ${
+                      regularizeTimerId === t.id
+                        ? 'bg-[#D4AF37] text-black font-bold'
+                        : 'bg-[#1c1c1c] text-gray-300 border border-[#2a2a2a]'
+                    }`}
+                  >
+                    {t.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Date Input */}
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] font-mono text-gray-400 uppercase">Date (DD-MM-YYYY)</label>
+              <input
+                type="text"
+                value={regularizeDate}
+                onChange={(e) => setRegularizeDate(e.target.value)}
+                className="w-full bg-[#0a0a0a] border border-[#333] focus:border-[#D4AF37] text-white px-3 py-1.5 rounded-xl text-xs outline-none font-mono"
+              />
+            </div>
+
+            {/* Start & End Times */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-mono text-gray-400 uppercase">Start Time (HH:MM)</label>
+                <input
+                  type="time"
+                  value={regularizeStartTime}
+                  onChange={(e) => setRegularizeStartTime(e.target.value)}
+                  className="bg-[#0a0a0a] border border-[#333] focus:border-[#D4AF37] text-white px-3 py-1.5 rounded-xl text-xs outline-none font-mono"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-mono text-gray-400 uppercase">End Time (HH:MM)</label>
+                <input
+                  type="time"
+                  value={regularizeEndTime}
+                  onChange={(e) => setRegularizeEndTime(e.target.value)}
+                  className="bg-[#0a0a0a] border border-[#333] focus:border-[#D4AF37] text-white px-3 py-1.5 rounded-xl text-xs outline-none font-mono"
+                />
+              </div>
+            </div>
+
+            {/* Computed Duration Preview */}
+            <div className="flex items-center justify-between p-2 rounded-xl bg-[#0a0a0a] border border-[#222]">
+              <span className="font-mono text-xs text-gray-400">Calculated Duration:</span>
+              <span className="font-mono text-xs text-[#D4AF37] font-bold">
+                {computePreviewDuration()}
+              </span>
+            </div>
+
+            {/* Mandatory Reason */}
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] font-mono text-gray-400 uppercase">
+                Reason for Regularization <span className="text-red-400">*</span>
+              </label>
+              <textarea
+                rows={2}
+                placeholder="e.g. Forgot to start timer at office, power interruption, adjusted meeting schedule"
+                value={regularizeReason}
+                onChange={(e) => setRegularizeReason(e.target.value)}
+                className="w-full bg-[#0a0a0a] border border-[#333] focus:border-[#D4AF37] text-white p-2 rounded-xl text-xs outline-none font-sans resize-none"
+              />
+            </div>
+
+            <div className="flex gap-2 pt-1 border-t border-[#2A2A2A]">
+              <button
+                type="button"
+                onClick={() => setIsRegularizeModalOpen(false)}
+                className="flex-1 py-2.5 rounded-xl bg-[#222] text-gray-300 font-mono text-xs font-semibold hover:bg-[#2a2a2a]"
+              >
+                CANCEL
+              </button>
+              <button
+                type="button"
+                disabled={isSubmittingRegularize || !regularizeReason.trim()}
+                onClick={handleSaveRegularize}
+                className="flex-1 py-2.5 rounded-xl bg-[#D4AF37] text-black font-mono text-xs font-bold hover:bg-[#F5D061] disabled:opacity-40 transition-all shadow-[0_0_15px_rgba(212,175,55,0.3)]"
+              >
+                {isSubmittingRegularize ? 'SAVING...' : 'APPLY REGULARIZATION'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Audit Trail Modal (Requirement 1) */}
+      {isAuditModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 overflow-y-auto">
+          <div className="w-full max-w-md max-h-[85vh] rounded-2xl bg-[#141414] border border-[#8B5CF6]/50 p-5 shadow-[0_0_35px_rgba(139,92,246,0.25)] flex flex-col gap-3.5 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-[#2A2A2A] pb-2.5 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <History size={16} className="text-[#A78BFA]" />
+                <span className="font-mono text-xs uppercase tracking-widest text-[#A78BFA] font-bold">
+                  REGULARIZATION AUDIT TRAIL
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAuditModalOpen(false)}
+                className="text-gray-400 hover:text-white"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 flex flex-col gap-2.5 no-scrollbar">
+              {allRegularizations.length === 0 ? (
+                <div className="py-8 text-center text-gray-500 font-mono text-xs">
+                  No regularization audit records found. All sessions are original.
+                </div>
+              ) : (
+                allRegularizations.map((reg) => (
+                  <div
+                    key={reg.id}
+                    className="p-3 rounded-xl bg-[#0a0a0a] border border-[#222] flex flex-col gap-1.5"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-xs text-[#D4AF37] font-bold">
+                        {reg.timerName}
+                      </span>
+                      <span className="font-mono text-[10px] text-gray-400">
+                        Date: {reg.regularizedDateStr}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs font-mono text-gray-300">
+                      <span>
+                        Time: {formatTime(reg.regularizedStartMs)} - {formatTime(reg.regularizedEndMs)}
+                      </span>
+                      <span className="text-[#A78BFA] font-bold">
+                        Duration: {formatDuration(reg.regularizedDurationMs, true)}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-gray-300 font-sans bg-[#141414] p-2 rounded-lg border border-[#222]">
+                      <span className="text-gray-400 font-mono text-[10px] block">Reason:</span>
+                      {reg.reason}
+                    </div>
+                    <div className="flex justify-between text-[9px] font-mono text-gray-500 pt-0.5">
+                      <span>Audit ID: {reg.id}</span>
+                      <span>Adjusted: {new Date(reg.createdAtMs).toLocaleString()}</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="pt-2 border-t border-[#2A2A2A] flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsAuditModalOpen(false)}
+                className="w-full py-2.5 rounded-xl bg-[#222] text-gray-300 font-mono text-xs font-semibold hover:bg-[#2a2a2a]"
+              >
+                CLOSE AUDIT TRAIL
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Expense Modal with Balance Recalculation (Requirement 7) */}
       {editingExpense && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
           <div className="w-full max-w-sm rounded-2xl bg-[#141414] border border-[#8B5CF6]/50 p-5 shadow-[0_0_35px_rgba(139,92,246,0.25)] flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200">
-            <span className="font-mono text-xs uppercase tracking-widest text-[#A78BFA] font-bold">
-              EDIT EXPENSE TRANSACTION
-            </span>
+            <div className="flex items-center justify-between border-b border-[#2A2A2A] pb-2.5">
+              <span className="font-mono text-xs uppercase tracking-widest text-[#A78BFA] font-bold">
+                EDIT EXPENSE TRANSACTION
+              </span>
+              <button
+                type="button"
+                onClick={() => setEditingExpense(null)}
+                className="text-gray-400 hover:text-white"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {editError && (
+              <div className="p-2.5 rounded-xl bg-red-950/60 border border-red-800 text-red-300 text-xs font-mono">
+                {editError}
+              </div>
+            )}
+
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-mono text-gray-400">Amount (INR)</label>
               <input
                 type="number"
                 step="any"
                 value={editAmount}
-                onChange={(e) => setEditAmount(e.target.value)}
+                onChange={(e) => {
+                  setEditAmount(e.target.value);
+                  if (editError) setEditError(null);
+                }}
                 className="w-full bg-[#0a0a0a] border border-[#333] focus:border-[#8B5CF6] text-white px-3 py-2 rounded-xl text-sm outline-none font-mono"
               />
             </div>
+
+            {/* Payment Method Selector */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-mono text-gray-400">Payment Source</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditPaymentMethod('UPI');
+                    setEditError(null);
+                  }}
+                  className={`flex flex-col p-2 rounded-xl border text-left ${
+                    editPaymentMethod === 'UPI'
+                      ? 'border-[#D4AF37] bg-[#D4AF37]/20 text-[#D4AF37]'
+                      : 'border-[#2A2A2A] bg-[#0c0c0c] text-gray-400'
+                  }`}
+                >
+                  <span className="font-mono text-xs font-bold">UPI</span>
+                  <span className="font-mono text-[9px]">Avail: ₹{accountBalances.upi.toLocaleString('en-IN')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditPaymentMethod('WALLET');
+                    setEditError(null);
+                  }}
+                  className={`flex flex-col p-2 rounded-xl border text-left ${
+                    editPaymentMethod === 'WALLET'
+                      ? 'border-[#8B5CF6] bg-[#8B5CF6]/20 text-[#A78BFA]'
+                      : 'border-[#2A2A2A] bg-[#0c0c0c] text-gray-400'
+                  }`}
+                >
+                  <span className="font-mono text-xs font-bold">WALLET</span>
+                  <span className="font-mono text-[9px]">Avail: ₹{accountBalances.wallet.toLocaleString('en-IN')}</span>
+                </button>
+              </div>
+            </div>
+
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-mono text-gray-400">Reason / Description</label>
               <input
                 type="text"
                 value={editReason}
-                onChange={(e) => setEditReason(e.target.value)}
+                onChange={(e) => {
+                  setEditReason(e.target.value);
+                  if (editError) setEditError(null);
+                }}
                 className="w-full bg-[#0a0a0a] border border-[#333] focus:border-[#8B5CF6] text-white px-3 py-2 rounded-xl text-sm outline-none"
               />
             </div>
+
             <div className="flex gap-2 pt-2 border-t border-[#2A2A2A]">
               <button
                 type="button"
@@ -550,10 +957,11 @@ export const HistoryAndExport: React.FC = () => {
               </button>
               <button
                 type="button"
+                disabled={isSavingEdit || !editAmount || parseFloat(editAmount) <= 0}
                 onClick={handleSaveEdit}
-                className="flex-1 py-2.5 rounded-xl bg-[#8B5CF6] text-white font-mono text-xs font-bold hover:bg-[#A78BFA] shadow-[0_0_15px_rgba(139,92,246,0.3)]"
+                className="flex-1 py-2.5 rounded-xl bg-[#8B5CF6] text-white font-mono text-xs font-bold hover:bg-[#A78BFA] shadow-[0_0_15px_rgba(139,92,246,0.3)] transition-all"
               >
-                UPDATE
+                {isSavingEdit ? 'UPDATING...' : 'UPDATE'}
               </button>
             </div>
           </div>

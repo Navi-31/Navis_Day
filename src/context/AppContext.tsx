@@ -4,8 +4,11 @@ import {
   TimerActiveState,
   TimerConfig,
   TimerEvent,
+  TimerRegularization,
   Expense,
   DailySummary,
+  PaymentMethod,
+  AccountBalances,
 } from '../types';
 import { dbService } from '../services/database';
 import { formatDate, formatTime } from '../utils/time';
@@ -45,18 +48,32 @@ interface AppContextType {
   pauseTimer: (timerId: TimerId) => Promise<void>;
   resumeTimer: (timerId: TimerId) => Promise<void>;
   stopTimer: (timerId: TimerId) => Promise<void>;
+  // Account Balances
+  accountBalances: AccountBalances;
+  addAccountBalance: (accountType: PaymentMethod, amount: number, note?: string) => Promise<{ success: boolean; error?: string }>;
   // Expenses
   todayExpenses: Expense[];
   todayTotalExpense: number;
-  addExpense: (amount: number, reason: string, category?: string) => Promise<void>;
-  editExpense: (expense: Expense) => Promise<void>;
-  removeExpense: (id: string) => Promise<void>;
-  // Daily Summary
+  addExpense: (amount: number, reason: string, category: string, paymentMethod: PaymentMethod) => Promise<{ success: boolean; error?: string }>;
+  editExpense: (expense: Expense) => Promise<{ success: boolean; error?: string }>;
+  removeExpense: (id: string) => Promise<{ success: boolean; error?: string }>;
+  // Daily Summary & Logs
   selectedDate: string;
   setSelectedDate: (dateStr: string) => void;
   selectedDateSummary: DailySummary | null;
   selectedDateEvents: TimerEvent[];
   selectedDateExpenses: Expense[];
+  selectedDateRegularizations: TimerRegularization[];
+  allRegularizations: TimerRegularization[];
+  regularizeSession: (params: {
+    sessionId?: string;
+    timerId: TimerId;
+    timerName: string;
+    regularizedDateStr: string;
+    regularizedStartMs: number;
+    regularizedEndMs: number;
+    reason: string;
+  }) => Promise<{ success: boolean; error?: string }>;
   refreshData: () => Promise<void>;
   clearAllData: () => Promise<void>;
 }
@@ -77,11 +94,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     bus_travel: 0,
   });
 
+  const [accountBalances, setAccountBalances] = useState<AccountBalances>({ upi: 0, wallet: 0 });
   const [todayExpenses, setTodayExpenses] = useState<Expense[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>(formatDate());
   const [selectedDateSummary, setSelectedDateSummary] = useState<DailySummary | null>(null);
   const [selectedDateEvents, setSelectedDateEvents] = useState<TimerEvent[]>([]);
   const [selectedDateExpenses, setSelectedDateExpenses] = useState<Expense[]>([]);
+  const [selectedDateRegularizations, setSelectedDateRegularizations] = useState<TimerRegularization[]>([]);
+  const [allRegularizations, setAllRegularizations] = useState<TimerRegularization[]>([]);
 
   const animFrameRef = useRef<number | null>(null);
   const activeStatesRef = useRef(activeStates);
@@ -101,6 +121,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const expenses = await dbService.getExpensesForDate(selectedDate);
     setSelectedDateExpenses(expenses);
+
+    const balances = await dbService.getAccountBalances();
+    setAccountBalances(balances);
+
+    const regs = await dbService.getRegularizationsForDate(selectedDate);
+    setSelectedDateRegularizations(regs);
+
+    const allRegs = await dbService.getAllRegularizations();
+    setAllRegularizations(allRegs);
   }, [selectedDate]);
 
   // Initial load
@@ -185,6 +214,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // --- TIMER ACTIONS ---
 
   const startTimer = async (timerId: TimerId) => {
+    // Bus timers can only be started if Day Analysis is already running or paused
+    if (timerId !== 'day_analysis') {
+      const dayAnalysis = activeStates['day_analysis'];
+      if (dayAnalysis.status === 'IDLE') {
+        alert('Please start Day Analysis first. Bus timers operate within the Day Analysis session.');
+        return;
+      }
+    }
+
     const now = Date.now();
     const config = TIMER_CONFIGS[timerId];
 
@@ -250,6 +288,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const resumeTimer = async (timerId: TimerId) => {
+    // Bus timers cannot resume if Day Analysis is IDLE
+    if (timerId !== 'day_analysis') {
+      const dayAnalysis = activeStates['day_analysis'];
+      if (dayAnalysis.status === 'IDLE') {
+        alert('Day Analysis is not running. Bus timers cannot resume.');
+        return;
+      }
+    }
+
     const now = Date.now();
     const config = TIMER_CONFIGS[timerId];
     const current = activeStates[timerId];
@@ -288,7 +335,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       totalDuration += Math.max(0, now - current.sessionStartTimeMs);
     }
 
-    // Record session for daily summary (splitting across midnight if it crossed midnight)
+    // Record session for daily summary
     if (totalDuration > 0) {
       const sessionStart = current.sessionStartTimeMs ? current.sessionStartTimeMs - current.accumulatedDurationMs : now - totalDuration;
       await dbService.recordTimerSession(timerId, config.name, sessionStart, now);
@@ -317,32 +364,125 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       note: `Total: ${Math.floor(totalDuration / 60000)}m`,
     });
 
+    // Requirement 2: When Day Analysis stops, automatically finalize any active Bus Waiting or Bus Travel session!
+    if (timerId === 'day_analysis') {
+      const busTimerIds: TimerId[] = ['bus_waiting', 'bus_travel'];
+      for (const busId of busTimerIds) {
+        const busCurrent = activeStates[busId];
+        if (busCurrent.status === 'RUNNING' || busCurrent.status === 'PAUSED') {
+          let busDuration = busCurrent.accumulatedDurationMs;
+          if (busCurrent.status === 'RUNNING' && busCurrent.sessionStartTimeMs) {
+            busDuration += Math.max(0, now - busCurrent.sessionStartTimeMs);
+          }
+
+          if (busDuration > 0) {
+            const busStart = busCurrent.sessionStartTimeMs
+              ? busCurrent.sessionStartTimeMs - busCurrent.accumulatedDurationMs
+              : now - busDuration;
+            await dbService.recordTimerSession(busId, TIMER_CONFIGS[busId].name, busStart, now);
+          }
+
+          const busNewState: TimerActiveState = {
+            timerId: busId,
+            status: 'IDLE',
+            sessionStartTimeMs: null,
+            accumulatedDurationMs: 0,
+            lastUpdatedMs: now,
+          };
+
+          setActiveStates((prev) => ({ ...prev, [busId]: busNewState }));
+          setDisplayTimes((prev) => ({ ...prev, [busId]: 0 }));
+          await dbService.saveTimerActiveState(busNewState);
+
+          await dbService.logTimerEvent({
+            timerId: busId,
+            timerName: TIMER_CONFIGS[busId].name,
+            eventType: 'STOP',
+            timestampMs: now,
+            dateStr: formatDate(now),
+            timeStr: formatTime(now),
+            durationMs: busDuration,
+            note: `Auto-stopped on Day Analysis finish (${Math.floor(busDuration / 60000)}m)`,
+          });
+        }
+      }
+    }
+
     await refreshData();
   };
 
-  // --- EXPENSE ACTIONS ---
+  // --- BALANCE & EXPENSE ACTIONS ---
 
-  const addExpense = async (amount: number, reason: string, category: string = 'General') => {
+  const addAccountBalance = async (
+    accountType: PaymentMethod,
+    amount: number,
+    note?: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    const res = await dbService.addAccountBalance(accountType, amount, note);
+    if (res.success && res.balances) {
+      setAccountBalances(res.balances);
+      await refreshData();
+      return { success: true };
+    }
+    return { success: false, error: res.error };
+  };
+
+  const addExpense = async (
+    amount: number,
+    reason: string,
+    category: string = 'General',
+    paymentMethod: PaymentMethod = 'UPI'
+  ): Promise<{ success: boolean; error?: string }> => {
     const now = Date.now();
-    await dbService.saveExpense({
+    const res = await dbService.saveExpense({
       dateStr: formatDate(now),
       timeStr: formatTime(now),
       timestampMs: now,
       amount,
       reason,
       category,
+      paymentMethod,
     });
-    await refreshData();
+    if (res.success) {
+      await refreshData();
+      return { success: true };
+    }
+    return { success: false, error: res.error };
   };
 
-  const editExpense = async (expense: Expense) => {
-    await dbService.updateExpense(expense);
-    await refreshData();
+  const editExpense = async (expense: Expense): Promise<{ success: boolean; error?: string }> => {
+    const res = await dbService.updateExpense(expense);
+    if (res.success) {
+      await refreshData();
+      return { success: true };
+    }
+    return { success: false, error: res.error };
   };
 
-  const removeExpense = async (id: string) => {
-    await dbService.deleteExpense(id);
-    await refreshData();
+  const removeExpense = async (id: string): Promise<{ success: boolean; error?: string }> => {
+    const res = await dbService.deleteExpense(id);
+    if (res.success) {
+      await refreshData();
+      return { success: true };
+    }
+    return { success: false, error: res.error };
+  };
+
+  const regularizeSession = async (params: {
+    sessionId?: string;
+    timerId: TimerId;
+    timerName: string;
+    regularizedDateStr: string;
+    regularizedStartMs: number;
+    regularizedEndMs: number;
+    reason: string;
+  }): Promise<{ success: boolean; error?: string }> => {
+    const res = await dbService.regularizeTimerSession(params);
+    if (res.success) {
+      await refreshData();
+      return { success: true };
+    }
+    return { success: false, error: res.error };
   };
 
   const clearAllData = async () => {
@@ -358,6 +498,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       bus_travel: 0,
     });
     setTodayExpenses([]);
+    setAccountBalances({ upi: 0, wallet: 0 });
     await refreshData();
   };
 
@@ -373,6 +514,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         pauseTimer,
         resumeTimer,
         stopTimer,
+        accountBalances,
+        addAccountBalance,
         todayExpenses,
         todayTotalExpense,
         addExpense,
@@ -383,6 +526,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         selectedDateSummary,
         selectedDateEvents,
         selectedDateExpenses,
+        selectedDateRegularizations,
+        allRegularizations,
+        regularizeSession,
         refreshData,
         clearAllData,
       }}

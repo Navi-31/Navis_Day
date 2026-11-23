@@ -76,7 +76,7 @@ export const DataAndSettings: React.FC = () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Aura_Database_Backup_${Date.now()}.json`;
+      a.download = `NR_Database_Backup_${Date.now()}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

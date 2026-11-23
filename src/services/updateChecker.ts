@@ -1,7 +1,7 @@
 import { GitHubReleaseInfo } from '../types';
 
-export const CURRENT_VERSION_NAME = 'v1.0.0';
-export const CURRENT_VERSION_CODE = 1;
+export const CURRENT_VERSION_NAME = 'v1.1.0';
+export const CURRENT_VERSION_CODE = 2;
 
 export async function checkForAppUpdates(repoOwner: string, repoName: string, personalToken?: string): Promise<{
   updateAvailable: boolean;
