@@ -370,7 +370,7 @@ class DatabaseService {
   public async getEventsForDate(dateStr: string): Promise<TimerEvent[]> {
     if (this.isNative && this.db) {
       const res = await this.db.query(
-        'SELECT * FROM timer_events WHERE date_str = ? ORDER BY timestamp_ms ASC',
+        'SELECT * FROM timer_events WHERE date_str = ? ORDER BY timestamp_ms DESC',
         [dateStr]
       );
       if (res.values) {
@@ -389,14 +389,14 @@ class DatabaseService {
       return [];
     } else {
       const all = await this.getAllEvents();
-      return all.filter((e) => e.dateStr === dateStr).sort((a, b) => a.timestampMs - b.timestampMs);
+      return all.filter((e) => e.dateStr === dateStr).sort((a, b) => b.timestampMs - a.timestampMs);
     }
   }
 
   public async getAllEvents(): Promise<TimerEvent[]> {
     if (this.isNative && this.db) {
       const res = await this.db.query(
-        'SELECT * FROM timer_events ORDER BY timestamp_ms ASC'
+        'SELECT * FROM timer_events ORDER BY timestamp_ms DESC'
       );
       if (res.values) {
         return res.values.map((r) => ({
@@ -836,6 +836,32 @@ class DatabaseService {
     }
   }
 
+  public async getBalanceTransactionsForDate(dateStr: string): Promise<BalanceTransaction[]> {
+    if (this.isNative && this.db) {
+      const res = await this.db.query(
+        'SELECT * FROM balance_transactions WHERE date_str = ? ORDER BY timestamp_ms DESC',
+        [dateStr]
+      );
+      if (res.values) {
+        return res.values.map((r) => ({
+          id: r.id,
+          accountType: r.account_type as PaymentMethod,
+          transactionType: r.transaction_type as 'CREDIT' | 'DEBIT' | 'REVERSAL',
+          amount: Number(r.amount),
+          dateStr: r.date_str,
+          timeStr: r.time_str,
+          timestampMs: Number(r.timestamp_ms),
+          referenceId: r.reference_id,
+          note: r.note,
+        }));
+      }
+      return [];
+    } else {
+      const all = await this.getAllBalanceTransactions();
+      return all.filter((tx) => tx.dateStr === dateStr).sort((a, b) => b.timestampMs - a.timestampMs);
+    }
+  }
+
   // --- EXPENSES WITH ATOMIC BALANCE INTEGRATION ---
 
   public async saveExpense(
@@ -1157,7 +1183,7 @@ class DatabaseService {
   public async getExpensesForDate(dateStr: string): Promise<Expense[]> {
     if (this.isNative && this.db) {
       const res = await this.db.query(
-        'SELECT * FROM expenses WHERE date_str = ? ORDER BY timestamp_ms ASC',
+        'SELECT * FROM expenses WHERE date_str = ? ORDER BY timestamp_ms DESC',
         [dateStr]
       );
       if (res.values) {
@@ -1175,14 +1201,14 @@ class DatabaseService {
       return [];
     } else {
       const all = await this.getAllExpenses();
-      return all.filter((e) => e.dateStr === dateStr).sort((a, b) => a.timestampMs - b.timestampMs);
+      return all.filter((e) => e.dateStr === dateStr).sort((a, b) => b.timestampMs - a.timestampMs);
     }
   }
 
   public async getAllExpenses(): Promise<Expense[]> {
     if (this.isNative && this.db) {
       const res = await this.db.query(
-        'SELECT * FROM expenses ORDER BY timestamp_ms ASC'
+        'SELECT * FROM expenses ORDER BY timestamp_ms DESC'
       );
       if (res.values) {
         return res.values.map((r) => ({

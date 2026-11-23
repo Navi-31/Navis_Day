@@ -21,6 +21,9 @@ import {
   RotateCcw,
   History,
   X,
+  Smartphone,
+  Wallet,
+  Plus,
 } from 'lucide-react';
 
 export const HistoryAndExport: React.FC = () => {
@@ -30,6 +33,7 @@ export const HistoryAndExport: React.FC = () => {
     selectedDateSummary,
     selectedDateEvents,
     selectedDateExpenses,
+    selectedDateBalanceTransactions,
     allRegularizations,
     accountBalances,
     editExpense,
@@ -245,10 +249,10 @@ export const HistoryAndExport: React.FC = () => {
     return formatDuration(diffMs);
   };
 
-  // Combine timer events and expenses into a unified timeline
+  // Combine timer events, expenses, and balance transactions into a unified reverse chronological timeline
   interface TimelineItem {
     id: string;
-    type: 'timer' | 'expense';
+    type: 'timer' | 'expense' | 'balance';
     timestampMs: number;
     timeStr: string;
     title: string;
@@ -259,7 +263,7 @@ export const HistoryAndExport: React.FC = () => {
     expenseObj?: Expense;
     isRegularized?: boolean;
     regularizationReason?: string;
-    icon: 'play' | 'pause' | 'stop' | 'receipt' | 'bus' | 'regularize';
+    icon: 'play' | 'pause' | 'stop' | 'receipt' | 'bus' | 'regularize' | 'smartphone' | 'wallet' | 'plus';
   }
 
   const timelineItems: TimelineItem[] = [];
@@ -304,10 +308,46 @@ export const HistoryAndExport: React.FC = () => {
         icon: 'receipt',
       });
     });
+
+    if (selectedDateBalanceTransactions) {
+      selectedDateBalanceTransactions.forEach((tx) => {
+        if (tx.transactionType === 'CREDIT') {
+          timelineItems.push({
+            id: tx.id,
+            type: 'balance',
+            timestampMs: tx.timestampMs,
+            timeStr: tx.timeStr,
+            title: `${tx.accountType === 'UPI' ? 'UPI' : 'Wallet'} Balance Added`,
+            badge: '+ BALANCE',
+            subtitle: `${tx.note ? tx.note + ' · ' : ''}${tx.accountType} · ${tx.timeStr}`,
+            amount: tx.amount,
+            icon: tx.accountType === 'UPI' ? 'smartphone' : 'wallet',
+          });
+        } else if (tx.transactionType === 'REVERSAL') {
+          timelineItems.push({
+            id: tx.id,
+            type: 'balance',
+            timestampMs: tx.timestampMs,
+            timeStr: tx.timeStr,
+            title: 'Expense Refunded',
+            badge: 'REFUND',
+            subtitle: `${tx.note ? tx.note + ' · ' : ''}${tx.accountType} · ${tx.timeStr}`,
+            amount: tx.amount,
+            icon: 'plus',
+          });
+        }
+      });
+    }
   }
 
-  // Sort chronological
-  timelineItems.sort((a, b) => a.timestampMs - b.timestampMs);
+  // Sort reverse chronological: NEWEST activity first
+  // Secondary: deterministic unique ID tiebreaker
+  timelineItems.sort((a, b) => {
+    if (b.timestampMs !== a.timestampMs) {
+      return b.timestampMs - a.timestampMs;
+    }
+    return b.id.localeCompare(a.id);
+  });
 
   return (
     <div className="flex flex-col flex-1 w-full bg-black text-white px-4 pt-2 pb-24 overflow-y-auto no-scrollbar">
@@ -518,38 +558,48 @@ export const HistoryAndExport: React.FC = () => {
       {/* SECTION 3: DETAILED CHRONOLOGICAL EVENT LOGS */}
       <div className="my-2 flex flex-col gap-2.5">
         {/* Filter Tabs */}
-        <div className="flex items-center justify-between p-1 bg-[#121212] border border-[#222] rounded-xl">
-          <button
-            onClick={() => setActiveFilter('all')}
-            className={`flex-1 py-1.5 rounded-lg font-mono text-xs uppercase transition-colors ${
-              activeFilter === 'all'
-                ? 'bg-[#222] text-[#D4AF37] font-bold shadow-[0_0_10px_rgba(212,175,55,0.2)]'
-                : 'text-gray-400 font-medium hover:text-white'
-            }`}
-          >
-            All ({selectedDateEvents.length + selectedDateExpenses.length})
-          </button>
-          <button
-            onClick={() => setActiveFilter('timers')}
-            className={`flex-1 py-1.5 rounded-lg font-mono text-xs uppercase transition-colors ${
-              activeFilter === 'timers'
-                ? 'bg-[#222] text-[#D4AF37] font-bold shadow-[0_0_10px_rgba(212,175,55,0.2)]'
-                : 'text-gray-400 font-medium hover:text-white'
-            }`}
-          >
-            Timers ({selectedDateEvents.length})
-          </button>
-          <button
-            onClick={() => setActiveFilter('expenses')}
-            className={`flex-1 py-1.5 rounded-lg font-mono text-xs uppercase transition-colors ${
-              activeFilter === 'expenses'
-                ? 'bg-[#222] text-[#D4AF37] font-bold shadow-[0_0_10px_rgba(212,175,55,0.2)]'
-                : 'text-gray-400 font-medium hover:text-white'
-            }`}
-          >
-            Ledger ({selectedDateExpenses.length})
-          </button>
-        </div>
+        {(() => {
+          const balanceTxCount = selectedDateBalanceTransactions
+            ? selectedDateBalanceTransactions.filter((tx) => tx.transactionType !== 'DEBIT').length
+            : 0;
+          const ledgerCount = selectedDateExpenses.length + balanceTxCount;
+          const totalCount = selectedDateEvents.length + ledgerCount;
+
+          return (
+            <div className="flex items-center justify-between p-1 bg-[#121212] border border-[#222] rounded-xl">
+              <button
+                onClick={() => setActiveFilter('all')}
+                className={`flex-1 py-1.5 rounded-lg font-mono text-xs uppercase transition-colors ${
+                  activeFilter === 'all'
+                    ? 'bg-[#222] text-[#D4AF37] font-bold shadow-[0_0_10px_rgba(212,175,55,0.2)]'
+                    : 'text-gray-400 font-medium hover:text-white'
+                }`}
+              >
+                All ({totalCount})
+              </button>
+              <button
+                onClick={() => setActiveFilter('timers')}
+                className={`flex-1 py-1.5 rounded-lg font-mono text-xs uppercase transition-colors ${
+                  activeFilter === 'timers'
+                    ? 'bg-[#222] text-[#D4AF37] font-bold shadow-[0_0_10px_rgba(212,175,55,0.2)]'
+                    : 'text-gray-400 font-medium hover:text-white'
+                }`}
+              >
+                Timers ({selectedDateEvents.length})
+              </button>
+              <button
+                onClick={() => setActiveFilter('expenses')}
+                className={`flex-1 py-1.5 rounded-lg font-mono text-xs uppercase transition-colors ${
+                  activeFilter === 'expenses'
+                    ? 'bg-[#222] text-[#D4AF37] font-bold shadow-[0_0_10px_rgba(212,175,55,0.2)]'
+                    : 'text-gray-400 font-medium hover:text-white'
+                }`}
+              >
+                Ledger ({ledgerCount})
+              </button>
+            </div>
+          );
+        })()}
 
         {/* Master Timeline List */}
         <div className="flex flex-col gap-2">
@@ -566,7 +616,9 @@ export const HistoryAndExport: React.FC = () => {
                 <div className="flex items-center gap-3 min-w-0">
                   <div
                     className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                      item.type === 'expense'
+                      item.type === 'balance'
+                        ? 'bg-[#13281a] text-emerald-400 border border-emerald-500/30'
+                        : item.type === 'expense'
                         ? 'bg-[#1a1528] text-[#A78BFA] border border-[#8B5CF6]/30'
                         : item.badge === 'REGULARIZE'
                         ? 'bg-[#2c1d38] text-[#D4AF37] border border-[#D4AF37]/50'
@@ -577,7 +629,13 @@ export const HistoryAndExport: React.FC = () => {
                         : 'bg-[#181818] text-gray-400'
                     }`}
                   >
-                    {item.type === 'expense' ? (
+                    {item.icon === 'smartphone' ? (
+                      <Smartphone size={15} className="text-emerald-400" />
+                    ) : item.icon === 'wallet' ? (
+                      <Wallet size={15} className="text-emerald-400" />
+                    ) : item.icon === 'plus' ? (
+                      <Plus size={15} className="text-emerald-400" />
+                    ) : item.type === 'expense' ? (
                       <Receipt size={16} />
                     ) : item.badge === 'REGULARIZE' ? (
                       <RotateCcw size={15} className="text-[#D4AF37]" />
@@ -597,7 +655,9 @@ export const HistoryAndExport: React.FC = () => {
                       </span>
                       <span
                         className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-bold ${
-                          item.badge === 'REGULARIZE'
+                          item.type === 'balance'
+                            ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-500/40'
+                            : item.badge === 'REGULARIZE'
                             ? 'bg-gradient-to-r from-[#D4AF37]/30 to-[#8B5CF6]/30 text-[#D4AF37] border border-[#D4AF37]/40'
                             : item.badge === 'START' || item.badge === 'RESUME'
                             ? 'bg-[#D4AF37]/20 text-[#D4AF37]'
@@ -617,9 +677,18 @@ export const HistoryAndExport: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Right Column: Time or Expense Amount + Edit/Delete */}
+                {/* Right Column: Time or Expense/Balance Amount + Edit/Delete */}
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  {item.type === 'expense' && item.amount !== undefined ? (
+                  {item.type === 'balance' && item.amount !== undefined ? (
+                    <div className="flex flex-col items-end">
+                      <span className="font-mono text-sm font-bold text-emerald-400">
+                        +₹{item.amount.toLocaleString('en-IN')}
+                      </span>
+                      <span className="font-mono text-[9px] text-[#D4AF37]">
+                        {item.timeStr}
+                      </span>
+                    </div>
+                  ) : item.type === 'expense' && item.amount !== undefined ? (
                     <div className="flex items-center gap-2">
                       <div className="flex flex-col items-end">
                         <span className="font-mono text-sm font-bold text-[#A78BFA]">

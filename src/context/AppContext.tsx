@@ -9,6 +9,7 @@ import {
   DailySummary,
   PaymentMethod,
   AccountBalances,
+  BalanceTransaction,
 } from '../types';
 import { dbService } from '../services/database';
 import { formatDate, formatTime } from '../utils/time';
@@ -63,6 +64,7 @@ interface AppContextType {
   selectedDateSummary: DailySummary | null;
   selectedDateEvents: TimerEvent[];
   selectedDateExpenses: Expense[];
+  selectedDateBalanceTransactions: BalanceTransaction[];
   selectedDateRegularizations: TimerRegularization[];
   allRegularizations: TimerRegularization[];
   regularizeSession: (params: {
@@ -100,6 +102,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [selectedDateSummary, setSelectedDateSummary] = useState<DailySummary | null>(null);
   const [selectedDateEvents, setSelectedDateEvents] = useState<TimerEvent[]>([]);
   const [selectedDateExpenses, setSelectedDateExpenses] = useState<Expense[]>([]);
+  const [selectedDateBalanceTransactions, setSelectedDateBalanceTransactions] = useState<BalanceTransaction[]>([]);
   const [selectedDateRegularizations, setSelectedDateRegularizations] = useState<TimerRegularization[]>([]);
   const [allRegularizations, setAllRegularizations] = useState<TimerRegularization[]>([]);
 
@@ -124,6 +127,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const balances = await dbService.getAccountBalances();
     setAccountBalances(balances);
+
+    const bTxs = await dbService.getBalanceTransactionsForDate(selectedDate);
+    setSelectedDateBalanceTransactions(bTxs);
 
     const regs = await dbService.getRegularizationsForDate(selectedDate);
     setSelectedDateRegularizations(regs);
@@ -526,6 +532,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         selectedDateSummary,
         selectedDateEvents,
         selectedDateExpenses,
+        selectedDateBalanceTransactions,
         selectedDateRegularizations,
         allRegularizations,
         regularizeSession,
