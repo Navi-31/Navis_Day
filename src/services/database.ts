@@ -556,8 +556,6 @@ class DatabaseService {
 
     if (this.isNative && this.db) {
       try {
-        await this.db.execute('BEGIN TRANSACTION;');
-
         // Save audit trail
         await this.db.run(
           `INSERT INTO timer_regularizations 
@@ -635,9 +633,7 @@ class DatabaseService {
           ]
         );
 
-        await this.db.execute('COMMIT;');
       } catch (err) {
-        await this.db.execute('ROLLBACK;');
         console.error('Failed to regularize session:', err);
         return { success: false, error: (err as Error).message };
       }
@@ -763,8 +759,6 @@ class DatabaseService {
 
     if (this.isNative && this.db) {
       try {
-        await this.db.execute('BEGIN TRANSACTION;');
-
         await this.db.run(
           `UPDATE account_balances 
            SET balance = balance + ?, last_updated_ms = ? 
@@ -779,11 +773,9 @@ class DatabaseService {
           [txId, accountType, 'CREDIT', amount, dateStr, timeStr, now, note?.trim() || 'Manual Balance Addition']
         );
 
-        await this.db.execute('COMMIT;');
         const balances = await this.getAccountBalances();
         return { success: true, balances };
       } catch (err) {
-        await this.db.execute('ROLLBACK;');
         console.error('Failed to add balance:', err);
         return { success: false, error: (err as Error).message };
       }
@@ -889,8 +881,6 @@ class DatabaseService {
 
     if (this.isNative && this.db) {
       try {
-        await this.db.execute('BEGIN TRANSACTION;');
-
         // 1. Deduct balance
         await this.db.run(
           `UPDATE account_balances 
@@ -934,10 +924,8 @@ class DatabaseService {
           ]
         );
 
-        await this.db.execute('COMMIT;');
         return { success: true, expense: fullExpense };
       } catch (err) {
-        await this.db.execute('ROLLBACK;');
         console.error('Failed to save expense with balance deduction:', err);
         return { success: false, error: (err as Error).message };
       }
@@ -1006,8 +994,6 @@ class DatabaseService {
 
     if (this.isNative && this.db) {
       try {
-        await this.db.execute('BEGIN TRANSACTION;');
-
         // 1. Refund old deduction
         await this.db.run(
           `UPDATE account_balances 
@@ -1060,10 +1046,8 @@ class DatabaseService {
           ]
         );
 
-        await this.db.execute('COMMIT;');
         return { success: true };
       } catch (err) {
-        await this.db.execute('ROLLBACK;');
         console.error('Failed to update expense with balance adjustment:', err);
         return { success: false, error: (err as Error).message };
       }
@@ -1114,8 +1098,6 @@ class DatabaseService {
 
     if (this.isNative && this.db) {
       try {
-        await this.db.execute('BEGIN TRANSACTION;');
-
         // 1. Refund balance
         await this.db.run(
           `UPDATE account_balances 
@@ -1145,10 +1127,8 @@ class DatabaseService {
         // 3. Delete from expenses
         await this.db.run('DELETE FROM expenses WHERE id = ?', [id]);
 
-        await this.db.execute('COMMIT;');
         return { success: true };
       } catch (err) {
-        await this.db.execute('ROLLBACK;');
         console.error('Failed to delete expense and refund balance:', err);
         return { success: false, error: (err as Error).message };
       }
