@@ -43,7 +43,8 @@ export const DataAndSettings: React.FC = () => {
 
   useEffect(() => {
     const loadSettings = async () => {
-      const owner = await dbService.getSetting('github_owner', 'nithy');
+      let owner = await dbService.getSetting('github_owner', 'Navi-31');
+      if (owner === 'nithy') owner = 'Navi-31';
       const repo = await dbService.getSetting('github_repo', 'Navis_Day');
       const token = await dbService.getSetting('github_token', '');
       setRepoOwner(owner);
