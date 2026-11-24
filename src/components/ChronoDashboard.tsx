@@ -97,19 +97,24 @@ export const ChronoDashboard: React.FC = () => {
       return;
     }
 
-    setIsSubmittingExpense(true);
+    // Capture values and IMMEDIATELY close modal to return to Home Screen!
+    const targetVal = val;
+    const targetReason = finalReason;
+    const targetCategory = selectedReasonOption || 'Expense';
+    const targetMethod = expensePaymentMethod;
+
+    setIsExpenseModalOpen(false);
+    setAmountInput('');
+    setSelectedReasonOption(null);
+    setCustomReason('');
     setExpenseError(null);
 
-    const res = await addExpense(val, finalReason, selectedReasonOption || 'Expense', expensePaymentMethod);
+    setIsSubmittingExpense(true);
+    const res = await addExpense(targetVal, targetReason, targetCategory, targetMethod);
     setIsSubmittingExpense(false);
 
-    if (res.success) {
-      setAmountInput('');
-      setSelectedReasonOption(null);
-      setCustomReason('');
-      setIsExpenseModalOpen(false);
-    } else {
-      setExpenseError(res.error || 'Failed to save expense');
+    if (!res.success) {
+      alert(res.error || 'Failed to save expense');
     }
   };
 
@@ -579,14 +584,26 @@ export const ChronoDashboard: React.FC = () => {
 
               {/* Insufficient Balance Notice */}
               {hasInsufficientBalance && (
-                <div className="flex items-start gap-2 p-2.5 rounded-xl bg-red-950/70 border border-red-800 text-red-200 text-xs font-mono">
-                  <AlertCircle size={15} className="text-red-400 flex-shrink-0 mt-0.5" />
-                  <div className="flex flex-col">
-                    <span className="font-bold">Insufficient {expensePaymentMethod} Balance</span>
-                    <span className="text-[11px] text-red-300">
-                      Available: ₹{selectedAvailableBalance.toLocaleString('en-IN')} (Short by ₹{(expenseAmountNum - selectedAvailableBalance).toLocaleString('en-IN')})
-                    </span>
+                <div className="flex flex-col gap-2 p-2.5 rounded-xl bg-red-950/70 border border-red-800 text-red-200 text-xs font-mono">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle size={15} className="text-red-400 flex-shrink-0 mt-0.5" />
+                    <div className="flex flex-col">
+                      <span className="font-bold">Insufficient {expensePaymentMethod} Balance</span>
+                      <span className="text-[11px] text-red-300">
+                        Available: ₹{selectedAvailableBalance.toLocaleString('en-IN')} (Short by ₹{(expenseAmountNum - selectedAvailableBalance).toLocaleString('en-IN')})
+                      </span>
+                    </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const needed = expenseAmountNum - selectedAvailableBalance;
+                      await addAccountBalance(expensePaymentMethod, needed, 'Quick Top-up for Expense');
+                    }}
+                    className="py-1 px-2.5 rounded-lg bg-[#D4AF37] text-black font-bold font-mono text-[11px] hover:bg-[#F5D061] active:scale-95 transition-all text-center self-start shadow-[0_0_10px_rgba(212,175,55,0.3)]"
+                  >
+                    + Add ₹{(expenseAmountNum - selectedAvailableBalance).toLocaleString('en-IN')} to {expensePaymentMethod}
+                  </button>
                 </div>
               )}
 

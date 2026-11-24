@@ -110,40 +110,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const activeStatesRef = useRef(activeStates);
   activeStatesRef.current = activeStates;
 
-  // Refresh data for selected date and today (Optimized with Promise.all for high performance)
+  // Refresh data for selected date and today (Safe sequential execution to prevent SQLite concurrency locks)
   const refreshData = useCallback(async () => {
     const todayStr = formatDate();
     try {
-      const [
-        tExpenses,
-        summary,
-        events,
-        expenses,
-        balances,
-        bTxs,
-        regs,
-        allRegs,
-      ] = await Promise.all([
-        dbService.getExpensesForDate(todayStr),
-        dbService.getDailySummary(selectedDate),
-        dbService.getEventsForDate(selectedDate),
-        dbService.getExpensesForDate(selectedDate),
-        dbService.getAccountBalances(),
-        dbService.getBalanceTransactionsForDate(selectedDate),
-        dbService.getRegularizationsForDate(selectedDate),
-        dbService.getAllRegularizations(),
-      ]);
-
+      const tExpenses = await dbService.getExpensesForDate(todayStr);
       setTodayExpenses(tExpenses);
+
+      const summary = await dbService.getDailySummary(selectedDate);
       setSelectedDateSummary(summary);
+
+      const events = await dbService.getEventsForDate(selectedDate);
       setSelectedDateEvents(events);
+
+      const expenses = await dbService.getExpensesForDate(selectedDate);
       setSelectedDateExpenses(expenses);
+
+      const balances = await dbService.getAccountBalances();
       setAccountBalances(balances);
+
+      const bTxs = await dbService.getBalanceTransactionsForDate(selectedDate);
       setSelectedDateBalanceTransactions(bTxs);
+
+      const regs = await dbService.getRegularizationsForDate(selectedDate);
       setSelectedDateRegularizations(regs);
+
+      const allRegs = await dbService.getAllRegularizations();
       setAllRegularizations(allRegs);
     } catch (err) {
-      console.error('Failed to refresh data in parallel:', err);
+      console.error('Failed to refresh data:', err);
     }
   }, [selectedDate]);
 
@@ -461,21 +456,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     category: string = 'General',
     paymentMethod: PaymentMethod = 'UPI'
   ): Promise<{ success: boolean; error?: string }> => {
+    // 1. Optimistic instant deduction in UI state
+    const key = paymentMethod.toLowerCase() as 'upi' | 'wallet';
+    setAccountBalances((prev) => ({
+      ...prev,
+      [key]: Math.max(0, prev[key] - amount),
+    }));
+
     const now = Date.now();
-    const res = await dbService.saveExpense({
-      dateStr: formatDate(now),
-      timeStr: formatTime(now),
+    const dateStr = formatDate(now);
+    const timeStr = formatTime(now);
+
+    const optimisticExp: Expense = {
+      id: 'exp_' + now,
+      dateStr,
+      timeStr,
       timestampMs: now,
       amount,
       reason,
       category,
       paymentMethod,
-    });
-    if (res.success) {
-      await refreshData();
-      return { success: true };
+    };
+
+    setTodayExpenses((prev) => [optimisticExp, ...prev]);
+
+    try {
+      const res = await dbService.saveExpense({
+        dateStr,
+        timeStr,
+        timestampMs: now,
+        amount,
+        reason,
+        category,
+        paymentMethod,
+      });
+
+      if (res.success) {
+        // Trigger non-blocking background refresh
+        refreshData().catch(console.error);
+        return { success: true };
+      }
+
+      // Rollback if DB failed
+      const rollback = await dbService.getAccountBalances();
+      setAccountBalances(rollback);
+      const rollbackExp = await dbService.getExpensesForDate(dateStr);
+      setTodayExpenses(rollbackExp);
+      return { success: false, error: res.error };
+    } catch (err) {
+      const rollback = await dbService.getAccountBalances();
+      setAccountBalances(rollback);
+      const rollbackExp = await dbService.getExpensesForDate(dateStr);
+      setTodayExpenses(rollbackExp);
+      return { success: false, error: (err as Error).message };
     }
-    return { success: false, error: res.error };
   };
 
   const editExpense = async (expense: Expense): Promise<{ success: boolean; error?: string }> => {
